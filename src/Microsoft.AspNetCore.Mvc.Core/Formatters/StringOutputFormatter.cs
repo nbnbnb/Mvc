@@ -29,18 +29,17 @@ namespace Microsoft.AspNetCore.Mvc.Formatters
                 throw new ArgumentNullException(nameof(context));
             }
 
-            // Ignore the passed in content type, if the object is string
-            // always return it as a text/plain format.
             if (context.ObjectType == typeof(string) || context.Object is string)
             {
-                if (!context.ContentType.HasValue)
+                // Call into base to check if the current request's content type is a supported media type.
+                var canWriteResult = base.CanWriteResult(context);
+                if (canWriteResult)
                 {
                     var mediaType = SupportedMediaTypes[0];
                     var encoding = SupportedEncodings[0];
                     context.ContentType = new StringSegment(MediaType.ReplaceEncoding(mediaType, encoding));
+                    return true;
                 }
-
-                return true;
             }
 
             return false;
