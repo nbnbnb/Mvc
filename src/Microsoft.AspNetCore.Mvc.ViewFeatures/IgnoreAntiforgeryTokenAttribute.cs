@@ -14,6 +14,6 @@ namespace Microsoft.AspNetCore.Mvc
     public class IgnoreAntiforgeryTokenAttribute : Attribute, IAntiforgeryPolicy, IOrderedFilter
     {
         /// <inheritdoc />
-        public int Order { get; set; }
+        public int Order { get; set; } = 1000;
     }
 }

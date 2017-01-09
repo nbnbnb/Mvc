@@ -175,5 +175,25 @@ namespace Microsoft.AspNetCore.Mvc.FunctionalTests
             var pragmaValue = Assert.Single(response.Headers.Pragma.ToArray());
             Assert.Equal("no-cache", pragmaValue.Name);
         }
+
+        [Theory]
+        [InlineData("GET", "ValidateAntiForgeryTokenOnController/GetAction", "GetAction")]
+        [InlineData("POST", "AutoValidateAntiforgeryTokenOnController/IgnoredPostAction", "IgnoredPostAction")]
+        public async Task AntiforgeryValidation_DoesNotHappenForActionsWith_IgnoreAntiforgeryTokenAttributes(
+            string method,
+            string url,
+            string expectedBody)
+        {
+            // Arrange
+            var request = new HttpRequestMessage(new HttpMethod(method), url);
+
+            // Act
+            var response = await Client.SendAsync(request);
+
+            // Assert
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var body = await response.Content.ReadAsStringAsync();
+            Assert.Equal(expectedBody, body);
+        }
     }
 }
