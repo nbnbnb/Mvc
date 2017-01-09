@@ -14,7 +14,7 @@ namespace Microsoft.AspNetCore.Mvc.Formatters
 {
     public class StringOutputFormatterTests
     {
-        public static IEnumerable<object[]> CanWriteResultForStringTypesData
+        public static IEnumerable<object[]> CanWriteStringsData
         {
             get
             {
@@ -25,29 +25,33 @@ namespace Microsoft.AspNetCore.Mvc.Formatters
             }
         }
 
-        public static IEnumerable<object[]> CannotWriteResultForNonStringTypesData
+        public static TheoryData<object> CannotWriteNonStringsData
         {
             get
             {
-                // object value, bool useDeclaredTypeAsString
-                yield return new object[] { null, false };
-                yield return new object[] { new object(), false };
+                return new TheoryData<object>()
+                {
+                    null,
+                    new object()
+                };
             }
         }
 
-        [Fact]
-        public void CannotWriteResult_ForNonTextPlainOrNonBrowserMediaTypes()
+        [Theory]
+        [InlineData("application/json")]
+        [InlineData("application/xml")]
+        public void CannotWriteUnsupportedMediaType(string contentType)
         {
             // Arrange
             var formatter = new StringOutputFormatter();
-            var expectedContentType = new StringSegment("application/json");
+            var expectedContentType = new StringSegment(contentType);
 
             var context = new OutputFormatterWriteContext(
                 new DefaultHttpContext(),
                 new TestHttpResponseStreamWriterFactory().CreateWriter,
                 typeof(string),
                 "Thisisastring");
-            context.ContentType = expectedContentType;
+            context.ContentType = new StringSegment(contentType);
 
             // Act
             var result = formatter.CanWriteResult(context);
@@ -78,17 +82,17 @@ namespace Microsoft.AspNetCore.Mvc.Formatters
 
             // Assert
             Assert.True(result);
-            Assert.Equal(new StringSegment("text/plain; charset=utf-8"), context.ContentType);
+            Assert.Equal(new StringSegment("text/plain"), context.ContentType);
         }
 
         [Theory]
-        [MemberData(nameof(CanWriteResultForStringTypesData))]
-        public void CanWriteResult_ForStringTypes(
+        [MemberData(nameof(CanWriteStringsData))]
+        public void CanWriteStrings(
             object value,
             bool useDeclaredTypeAsString)
         {
             // Arrange
-            var expectedContentType = new StringSegment("text/plain; charset=utf-8");
+            var expectedContentType = new StringSegment("text/plain");
 
             var formatter = new StringOutputFormatter();
             var type = useDeclaredTypeAsString ? typeof(string) : typeof(object);
@@ -109,21 +113,16 @@ namespace Microsoft.AspNetCore.Mvc.Formatters
         }
 
         [Theory]
-        [MemberData(nameof(CannotWriteResultForNonStringTypesData))]
-        public void CannotWriteResult_ForNonStringTypes(
-            object value,
-            bool useDeclaredTypeAsString)
+        [MemberData(nameof(CannotWriteNonStringsData))]
+        public void CannotWriteNonStrings(object value)
         {
             // Arrange
-            var expectedContentType = new StringSegment("text/plain; charset=utf-8");
-
+            var expectedContentType = new StringSegment("text/plain");
             var formatter = new StringOutputFormatter();
-            var type = useDeclaredTypeAsString ? typeof(string) : typeof(object);
-
             var context = new OutputFormatterWriteContext(
                 new DefaultHttpContext(),
                 new TestHttpResponseStreamWriterFactory().CreateWriter,
-                type,
+                typeof(object),
                 value);
             context.ContentType = new StringSegment("text/plain");
 
@@ -132,6 +131,7 @@ namespace Microsoft.AspNetCore.Mvc.Formatters
 
             // Assert
             Assert.False(result);
+            Assert.Equal(expectedContentType, context.ContentType);
         }
 
         [Fact]
