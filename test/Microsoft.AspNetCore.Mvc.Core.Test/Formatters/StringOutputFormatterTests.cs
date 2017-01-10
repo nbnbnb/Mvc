@@ -72,11 +72,6 @@ namespace Microsoft.AspNetCore.Mvc.Formatters
                 typeof(string),
                 "Thisisastring");
 
-            // For example, this can happen when a request is received without any Accept header OR a request
-            // is from a browser (in which case this ContentType is set to null by the infrastructure when
-            // RespectBrowserAcceptHeader is set to false)
-            context.ContentType = new StringSegment();
-
             // Act
             var result = formatter.CanWriteResult(context);
 
