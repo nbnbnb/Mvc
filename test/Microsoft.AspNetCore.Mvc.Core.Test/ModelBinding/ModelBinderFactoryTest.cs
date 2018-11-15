@@ -2,11 +2,12 @@
 // Licensed under the Apache License, Version 2.0. See License.txt in the project root for license information.
 
 using System;
-using System.Collections.Generic;
-using Microsoft.AspNetCore.Mvc.Internal;
 using Microsoft.AspNetCore.Mvc.ModelBinding.Binders;
-using Microsoft.AspNetCore.Mvc.ModelBinding.Internal;
 using Microsoft.AspNetCore.Mvc.ModelBinding.Metadata;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Moq;
 using Xunit;
 
@@ -14,24 +15,47 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
 {
     public class ModelBinderFactoryTest
     {
-        // No providers => can't create a binder
         [Fact]
-        public void CreateBinder_Throws_WhenBinderNotCreated()
+        public void CreateBinder_Throws_WhenNoProviders()
         {
             // Arrange
+            var expected = $"'{typeof(MvcOptions).FullName}.{nameof(MvcOptions.ModelBinderProviders)}' must not be " +
+                $"empty. At least one '{typeof(IModelBinderProvider).FullName}' is required to model bind.";
             var metadataProvider = new TestModelMetadataProvider();
-            var options = new TestOptionsManager<MvcOptions>();
-            var factory = new ModelBinderFactory(metadataProvider, options);
-
+            var options = Options.Create(new MvcOptions());
+            var factory = new ModelBinderFactory(
+                metadataProvider,
+                options,
+                GetServices());
             var context = new ModelBinderFactoryContext()
             {
                 Metadata = metadataProvider.GetMetadataForType(typeof(string)),
             };
 
-            // Act
+            // Act & Assert
             var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateBinder(context));
+            Assert.Equal(expected, exception.Message);
+        }
 
-            // Assert
+        [Fact]
+        public void CreateBinder_Throws_WhenBinderNotCreated()
+        {
+            // Arrange
+            var metadataProvider = new TestModelMetadataProvider();
+            var options = Options.Create(new MvcOptions());
+            options.Value.ModelBinderProviders.Add(new TestModelBinderProvider(_ => null));
+
+            var factory = new ModelBinderFactory(
+                metadataProvider,
+                options,
+                GetServices());
+            var context = new ModelBinderFactoryContext()
+            {
+                Metadata = metadataProvider.GetMetadataForType(typeof(string)),
+            };
+
+            // Act & Assert
+            var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateBinder(context));
             Assert.Equal(
                 $"Could not create a model binder for model object of type '{typeof(string).FullName}'.",
                 exception.Message);
@@ -44,7 +68,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             var metadataProvider = new TestModelMetadataProvider();
 
             // There isn't a provider that can handle WidgetId.
-            var options = new TestOptionsManager<MvcOptions>();
+            var options = Options.Create(new MvcOptions());
             options.Value.ModelBinderProviders.Add(new TestModelBinderProvider(c =>
             {
                 if (c.Metadata.ModelType == typeof(Widget))
@@ -56,7 +80,10 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
                 return null;
             }));
 
-            var factory = new ModelBinderFactory(metadataProvider, options);
+            var factory = new ModelBinderFactory(
+                metadataProvider,
+                options,
+                GetServices());
 
             var context = new ModelBinderFactoryContext()
             {
@@ -79,9 +106,9 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
                 .ForProperty<Widget>(nameof(Widget.Id))
                 .BindingDetails(m => m.IsBindingAllowed = false);
 
-            var modelBinder = new ByteArrayModelBinder();
+            var modelBinder = new ByteArrayModelBinder(NullLoggerFactory.Instance);
 
-            var options = new TestOptionsManager<MvcOptions>();
+            var options = Options.Create(new MvcOptions());
             options.Value.ModelBinderProviders.Add(new TestModelBinderProvider(c =>
             {
                 if (c.Metadata.ModelType == typeof(WidgetId))
@@ -92,7 +119,10 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
                 return null;
             }));
 
-            var factory = new ModelBinderFactory(metadataProvider, options);
+            var factory = new ModelBinderFactory(
+                metadataProvider,
+                options,
+                GetServices());
 
             var context = new ModelBinderFactoryContext()
             {
@@ -113,7 +143,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             // Arrange
             var metadataProvider = new TestModelMetadataProvider();
 
-            var options = new TestOptionsManager<MvcOptions>();
+            var options = Options.Create(new MvcOptions());
             options.Value.ModelBinderProviders.Add(new TestModelBinderProvider(c =>
             {
                 if (c.Metadata.ModelType == typeof(Widget))
@@ -129,7 +159,10 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
                 return null;
             }));
 
-            var factory = new ModelBinderFactory(metadataProvider, options);
+            var factory = new ModelBinderFactory(
+                metadataProvider,
+                options,
+                GetServices());
 
             var context = new ModelBinderFactoryContext()
             {
@@ -151,7 +184,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
 
             var callCount = 0;
 
-            var options = new TestOptionsManager<MvcOptions>();
+            var options = Options.Create(new MvcOptions());
             options.Value.ModelBinderProviders.Add(new TestModelBinderProvider(c =>
             {
                 var currentCallCount = ++callCount;
@@ -166,7 +199,10 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
                 return Mock.Of<IModelBinder>();
             }));
 
-            var factory = new ModelBinderFactory(metadataProvider, options);
+            var factory = new ModelBinderFactory(
+                metadataProvider,
+                options,
+                GetServices());
 
             var context = new ModelBinderFactoryContext()
             {
@@ -186,14 +222,17 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             // Arrange
             var metadataProvider = new TestModelMetadataProvider();
 
-            var options = new TestOptionsManager<MvcOptions>();
+            var options = Options.Create(new MvcOptions());
             options.Value.ModelBinderProviders.Add(new TestModelBinderProvider(c =>
             {
                 Assert.Equal(typeof(Employee), c.Metadata.ModelType);
                 return Mock.Of<IModelBinder>();
             }));
 
-            var factory = new ModelBinderFactory(metadataProvider, options);
+            var factory = new ModelBinderFactory(
+                metadataProvider,
+                options,
+                GetServices());
 
             var context = new ModelBinderFactoryContext()
             {
@@ -214,14 +253,17 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             // Arrange
             var metadataProvider = new TestModelMetadataProvider();
 
-            var options = new TestOptionsManager<MvcOptions>();
+            var options = Options.Create(new MvcOptions());
             options.Value.ModelBinderProviders.Add(new TestModelBinderProvider(c =>
             {
                 Assert.Equal(typeof(Employee), c.Metadata.ModelType);
                 return Mock.Of<IModelBinder>();
             }));
 
-            var factory = new ModelBinderFactory(metadataProvider, options);
+            var factory = new ModelBinderFactory(
+                metadataProvider,
+                options,
+                GetServices());
 
             var context = new ModelBinderFactoryContext()
             {
@@ -326,10 +368,13 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
                 return modelBinder;
             });
 
-            var options = new TestOptionsManager<MvcOptions>();
+            var options = Options.Create(new MvcOptions());
             options.Value.ModelBinderProviders.Insert(0, modelBinderProvider);
 
-            var factory = new ModelBinderFactory(metadataProvider, options);
+            var factory = new ModelBinderFactory(
+                metadataProvider,
+                options,
+                GetServices());
             var factoryContext = new ModelBinderFactoryContext
             {
                 BindingInfo = parameterBindingInfo,
@@ -349,7 +394,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             // Arrange
             var metadataProvider = new TestModelMetadataProvider();
 
-            var options = new TestOptionsManager<MvcOptions>();
+            var options = Options.Create(new MvcOptions());
 
             IModelBinder inner = null;
 
@@ -382,7 +427,10 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             options.Value.ModelBinderProviders.Add(widgetProvider);
             options.Value.ModelBinderProviders.Add(widgetIdProvider);
 
-            var factory = new ModelBinderFactory(metadataProvider, options);
+            var factory = new ModelBinderFactory(
+                metadataProvider,
+                options,
+                GetServices());
 
             var context = new ModelBinderFactoryContext()
             {
@@ -407,7 +455,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             // Arrange
             var metadataProvider = new TestModelMetadataProvider();
 
-            var options = new TestOptionsManager<MvcOptions>();
+            var options = Options.Create(new MvcOptions());
 
             IModelBinder inner = null;
 
@@ -441,7 +489,10 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             options.Value.ModelBinderProviders.Add(widgetProvider);
             options.Value.ModelBinderProviders.Add(widgetIdProvider);
 
-            var factory = new ModelBinderFactory(metadataProvider, options);
+            var factory = new ModelBinderFactory(
+                metadataProvider,
+                options,
+                GetServices());
 
             var context = new ModelBinderFactoryContext()
             {
@@ -468,7 +519,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             // Arrange
             var metadataProvider = new TestModelMetadataProvider();
 
-            var options = new TestOptionsManager<MvcOptions>();
+            var options = Options.Create(new MvcOptions());
 
             IModelBinder inner = null;
 
@@ -492,7 +543,10 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             options.Value.ModelBinderProviders.Add(widgetProvider);
             options.Value.ModelBinderProviders.Add(widgetIdProvider);
 
-            var factory = new ModelBinderFactory(metadataProvider, options);
+            var factory = new ModelBinderFactory(
+                metadataProvider,
+                options,
+                GetServices());
 
             var context = new ModelBinderFactoryContext()
             {
@@ -515,8 +569,8 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             Assert.Equal(1, widgetIdProvider.SuccessCount);
         }
 
-        // This is a really wierd case, but I wanted to make sure it's covered so it doesn't
-        // blow up in wierd ways.
+        // This is a really weird case, but I wanted to make sure it's covered so it doesn't
+        // blow up in weird ways.
         //
         // If a binder provider tries to recursively create itself, but then returns null, we've
         // already returned and possibly cached the PlaceholderBinder instance, we want to make sure that
@@ -527,7 +581,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             // Arrange
             var metadataProvider = new TestModelMetadataProvider();
 
-            var options = new TestOptionsManager<MvcOptions>();
+            var options = Options.Create(new MvcOptions());
 
             IModelBinder inner = null;
             IModelBinder innerInner = null;
@@ -553,7 +607,10 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             options.Value.ModelBinderProviders.Add(widgetProvider);
             options.Value.ModelBinderProviders.Add(widgetIdProvider);
 
-            var factory = new ModelBinderFactory(metadataProvider, options);
+            var factory = new ModelBinderFactory(
+                metadataProvider,
+                options,
+                GetServices());
 
             var context = new ModelBinderFactoryContext()
             {
@@ -579,6 +636,13 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
 
             Assert.Equal(1, widgetProvider.SuccessCount);
             Assert.Equal(0, widgetIdProvider.SuccessCount);
+        }
+
+        private IServiceProvider GetServices()
+        {
+            var services = new ServiceCollection();
+            services.AddSingleton<ILoggerFactory>(NullLoggerFactory.Instance);
+            return services.BuildServiceProvider();
         }
 
         private class Widget

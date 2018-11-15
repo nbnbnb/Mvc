@@ -7,8 +7,9 @@ using System.Linq;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Abstractions;
 using Microsoft.AspNetCore.Mvc.Filters;
-using Microsoft.AspNetCore.Mvc.Internal;
+using Microsoft.AspNetCore.ResponseCaching;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 using Moq;
@@ -66,18 +67,18 @@ namespace Microsoft.AspNetCore.Mvc
                 // When there are no cache profiles then the passed in data is returned unchanged
                 yield return new object[] {
                     new ResponseCacheAttribute()
-                    { Duration = 20, Location = ResponseCacheLocation.Any, NoStore = false, VaryByHeader = "Accept" },
+                    { Duration = 20, Location = ResponseCacheLocation.Any, NoStore = false, VaryByHeader = "Accept", VaryByQueryKeys = new[] { "QueryKey" } },
                     null,
                     new CacheProfile
-                    { Duration = 20, Location = ResponseCacheLocation.Any, NoStore = false, VaryByHeader = "Accept" }
+                    { Duration = 20, Location = ResponseCacheLocation.Any, NoStore = false, VaryByHeader = "Accept", VaryByQueryKeys = new[] { "QueryKey" } }
                 };
 
                 yield return new object[] {
                     new ResponseCacheAttribute()
-                    { Duration = 0, Location = ResponseCacheLocation.None, NoStore = true, VaryByHeader = null },
+                    { Duration = 0, Location = ResponseCacheLocation.None, NoStore = true, VaryByHeader = null, VaryByQueryKeys = null },
                     null,
                     new CacheProfile
-                    { Duration = 0, Location = ResponseCacheLocation.None, NoStore = true, VaryByHeader = null }
+                    { Duration = 0, Location = ResponseCacheLocation.None, NoStore = true, VaryByHeader = null, VaryByQueryKeys = null }
                 };
 
                 // Everything gets overriden if attribute parameters are present,
@@ -89,6 +90,7 @@ namespace Microsoft.AspNetCore.Mvc
                         Location = ResponseCacheLocation.Any,
                         NoStore = false,
                         VaryByHeader = "Accept",
+                        VaryByQueryKeys = new[] { "QueryKey" },
                         CacheProfileName = "TestCacheProfile"
                     },
                     new Dictionary<string, CacheProfile> { { "TestCacheProfile", new CacheProfile
@@ -96,10 +98,11 @@ namespace Microsoft.AspNetCore.Mvc
                             Duration = 10,
                             Location = ResponseCacheLocation.Client,
                             NoStore = true,
-                            VaryByHeader = "Test"
+                            VaryByHeader = "Test",
+                            VaryByQueryKeys = new[] { "ProfileQueryKey" }
                         } } },
                     new CacheProfile
-                    { Duration = 20, Location = ResponseCacheLocation.Any, NoStore = false, VaryByHeader = "Accept" }
+                    { Duration = 20, Location = ResponseCacheLocation.Any, NoStore = false, VaryByHeader = "Accept", VaryByQueryKeys = new[] { "QueryKey" } }
                 };
 
                 // Select parameters override the selected profile.
@@ -114,10 +117,11 @@ namespace Microsoft.AspNetCore.Mvc
                             Duration = 10,
                             Location = ResponseCacheLocation.Client,
                             NoStore = false,
-                            VaryByHeader = "Test"
+                            VaryByHeader = "Test",
+                            VaryByQueryKeys = new[] { "ProfileQueryKey" }
                         } } },
                     new CacheProfile
-                    { Duration = 534, Location = ResponseCacheLocation.Client, NoStore = false, VaryByHeader = "Test" }
+                    { Duration = 534, Location = ResponseCacheLocation.Client, NoStore = false, VaryByHeader = "Test", VaryByQueryKeys = new[] { "ProfileQueryKey" } }
                 };
 
                 // Duration parameter gets added to the selected profile.
@@ -131,10 +135,11 @@ namespace Microsoft.AspNetCore.Mvc
                         {
                             Location = ResponseCacheLocation.Client,
                             NoStore = false,
-                            VaryByHeader = "Test"
+                            VaryByHeader = "Test",
+                            VaryByQueryKeys = new[] { "ProfileQueryKey" }
                         } } },
                     new CacheProfile
-                    { Duration = 534, Location = ResponseCacheLocation.Client, NoStore = false, VaryByHeader = "Test" }
+                    { Duration = 534, Location = ResponseCacheLocation.Client, NoStore = false, VaryByHeader = "Test", VaryByQueryKeys = new[] { "ProfileQueryKey" } }
                 };
 
                 // Default values gets added for parameters which are absent
@@ -146,7 +151,7 @@ namespace Microsoft.AspNetCore.Mvc
                     },
                     new Dictionary<string, CacheProfile>() { { "TestCacheProfile", new CacheProfile() } },
                     new CacheProfile
-                    { Duration = 5234, Location = ResponseCacheLocation.Any, NoStore = false, VaryByHeader = null }
+                    { Duration = 5234, Location = ResponseCacheLocation.Any, NoStore = false, VaryByHeader = null, VaryByQueryKeys = null }
                 };
             }
         }
@@ -167,6 +172,14 @@ namespace Microsoft.AspNetCore.Mvc
             Assert.Equal(expectedProfile.Location, responseCacheFilter.Location);
             Assert.Equal(expectedProfile.NoStore, responseCacheFilter.NoStore);
             Assert.Equal(expectedProfile.VaryByHeader, responseCacheFilter.VaryByHeader);
+            if (expectedProfile.VaryByQueryKeys == null)
+            {
+                Assert.Null(responseCacheFilter.VaryByQueryKeys);
+            }
+            else
+            {
+                Assert.Equal(expectedProfile.VaryByQueryKeys, responseCacheFilter.VaryByQueryKeys);
+            }
         }
 
         [Fact]
@@ -191,14 +204,17 @@ namespace Microsoft.AspNetCore.Mvc
         public void ResponseCache_SetsAllHeaders()
         {
             // Arrange
+            var varyByQueryKeys = new[] { "QueryKey" };
             var responseCache = new ResponseCacheAttribute()
             {
                 Duration = 100,
                 Location = ResponseCacheLocation.Any,
-                VaryByHeader = "Accept"
+                VaryByHeader = "Accept",
+                VaryByQueryKeys = varyByQueryKeys
             };
             var filter = (ResponseCacheFilter)responseCache.CreateInstance(GetServiceProvider(cacheProfiles: null));
             var context = GetActionExecutingContext(filter);
+            context.HttpContext.Features.Set<IResponseCachingFeature>(new ResponseCachingFeature());
 
             // Act
             filter.OnActionExecuting(context);
@@ -212,6 +228,7 @@ namespace Microsoft.AspNetCore.Mvc
             Assert.True(response.Headers.TryGetValue("Vary", out values));
             data = Assert.Single(values);
             Assert.Equal("Accept", data);
+            Assert.Equal(varyByQueryKeys, context.HttpContext.Features.Get<IResponseCachingFeature>().VaryByQueryKeys);
         }
 
         public static TheoryData<ResponseCacheAttribute, string> CacheControlData
@@ -310,7 +327,7 @@ namespace Microsoft.AspNetCore.Mvc
         private IServiceProvider GetServiceProvider(Dictionary<string, CacheProfile> cacheProfiles)
         {
             var serviceProvider = new Mock<IServiceProvider>();
-            var optionsAccessor = new TestOptionsManager<MvcOptions>();
+            var optionsAccessor = Options.Create(new MvcOptions());
             if (cacheProfiles != null)
             {
                 foreach (var p in cacheProfiles)
@@ -322,6 +339,9 @@ namespace Microsoft.AspNetCore.Mvc
             serviceProvider
                 .Setup(s => s.GetService(typeof(IOptions<MvcOptions>)))
                 .Returns(optionsAccessor);
+            serviceProvider
+                .Setup(s => s.GetService(typeof(ILoggerFactory)))
+                .Returns(Mock.Of<ILoggerFactory>());
 
             return serviceProvider.Object;
         }

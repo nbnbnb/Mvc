@@ -32,7 +32,7 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
         public async Task BindProperty_WithData_WithEmptyPrefix_GetsBound()
         {
             // Arrange
-            var argumentBinder = ModelBindingTestHelper.GetArgumentBinder();
+            var parameterBinder = ModelBindingTestHelper.GetParameterBinder();
             var parameter = new ParameterDescriptor()
             {
                 Name = "Parameter1",
@@ -51,7 +51,7 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
             var modelState = testContext.ModelState;
 
             // Act
-            var modelBindingResult = await argumentBinder.BindModelAsync(parameter, testContext);
+            var modelBindingResult = await parameterBinder.BindModelAsync(parameter, testContext);
 
             // Assert
 
@@ -86,7 +86,7 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
         public async Task BindCollectionProperty_WithData_IsBound()
         {
             // Arrange
-            var argumentBinder = ModelBindingTestHelper.GetArgumentBinder();
+            var parameterBinder = ModelBindingTestHelper.GetParameterBinder();
             var parameter = new ParameterDescriptor
             {
                 Name = "Parameter1",
@@ -100,7 +100,7 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
             var modelState = testContext.ModelState;
 
             // Act
-            var result = await argumentBinder.BindModelAsync(parameter, testContext);
+            var result = await parameterBinder.BindModelAsync(parameter, testContext);
 
             // Assert
             Assert.True(result.IsModelSet);
@@ -132,7 +132,7 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
         public async Task BindCollectionProperty_NoData_IsNotBound()
         {
             // Arrange
-            var argumentBinder = ModelBindingTestHelper.GetArgumentBinder();
+            var parameterBinder = ModelBindingTestHelper.GetParameterBinder();
             var parameter = new ParameterDescriptor
             {
                 Name = "Parameter1",
@@ -145,7 +145,7 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
             var modelState = testContext.ModelState;
 
             // Act
-            var result = await argumentBinder.BindModelAsync(parameter, testContext);
+            var result = await parameterBinder.BindModelAsync(parameter, testContext);
 
             // Assert
             Assert.True(result.IsModelSet);
@@ -175,7 +175,7 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
         public async Task BindReadOnlyCollectionProperty_WithData_IsBound()
         {
             // Arrange
-            var argumentBinder = ModelBindingTestHelper.GetArgumentBinder();
+            var parameterBinder = ModelBindingTestHelper.GetParameterBinder();
             var parameter = new ParameterDescriptor
             {
                 Name = "Parameter1",
@@ -189,7 +189,7 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
             var modelState = testContext.ModelState;
 
             // Act
-            var result = await argumentBinder.BindModelAsync(parameter, testContext);
+            var result = await parameterBinder.BindModelAsync(parameter, testContext);
 
             // Assert
             Assert.True(result.IsModelSet);
@@ -221,7 +221,7 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
         public async Task BindParameter_WithData_GetsBound()
         {
             // Arrange
-            var argumentBinder = ModelBindingTestHelper.GetArgumentBinder();
+            var parameterBinder = ModelBindingTestHelper.GetParameterBinder();
             var parameter = new ParameterDescriptor
             {
                 Name = "Parameter1",
@@ -243,7 +243,7 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
             var modelState = testContext.ModelState;
 
             // Act
-            var modelBindingResult = await argumentBinder.BindModelAsync(parameter, testContext);
+            var modelBindingResult = await parameterBinder.BindModelAsync(parameter, testContext);
 
             // Assert
             // ModelBindingResult
@@ -270,7 +270,7 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
         public async Task BindParameter_NoData_DoesNotGetBound()
         {
             // Arrange
-            var argumentBinder = ModelBindingTestHelper.GetArgumentBinder();
+            var parameterBinder = ModelBindingTestHelper.GetParameterBinder();
             var parameter = new ParameterDescriptor()
             {
                 Name = "Parameter1",
@@ -289,7 +289,7 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
             var modelState = testContext.ModelState;
 
             // Act
-            var modelBindingResult = await argumentBinder.BindModelAsync(parameter, testContext);
+            var modelBindingResult = await parameterBinder.BindModelAsync(parameter, testContext);
 
             // Assert
             Assert.False(modelBindingResult.IsModelSet);
@@ -297,6 +297,62 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
             // ModelState
             Assert.True(modelState.IsValid);
             Assert.Empty(modelState.Keys);
+        }
+
+        private class Car1
+        {
+            public string Name { get; set; }
+
+            public FormFileCollection Specs { get; set; }
+        }
+
+        [Fact]
+        public async Task BindProperty_WithData_WithPrefix_GetsBound()
+        {
+            // Arrange
+            var parameterBinder = ModelBindingTestHelper.GetParameterBinder();
+            var parameter = new ParameterDescriptor
+            {
+                Name = "p",
+                BindingInfo = new BindingInfo(),
+                ParameterType = typeof(Car1)
+            };
+
+            var data = "Some Data Is Better Than No Data.";
+            var testContext = ModelBindingTestHelper.GetTestContext(
+                request =>
+                {
+                    request.QueryString = QueryString.Create("p.Name", "Accord");
+                    UpdateRequest(request, data, "p.Specs");
+                });
+
+            var modelState = testContext.ModelState;
+
+            // Act
+            var modelBindingResult = await parameterBinder.BindModelAsync(parameter, testContext);
+
+            // Assert
+
+            // ModelBindingResult
+            Assert.True(modelBindingResult.IsModelSet);
+
+            // Model
+            var car = Assert.IsType<Car1>(modelBindingResult.Model);
+            Assert.NotNull(car.Specs);
+            var file = Assert.Single(car.Specs);
+            Assert.Equal("form-data; name=p.Specs; filename=text.txt", file.ContentDisposition);
+            var reader = new StreamReader(file.OpenReadStream());
+            Assert.Equal(data, reader.ReadToEnd());
+
+            // ModelState
+            Assert.True(modelState.IsValid);
+            Assert.Equal(2, modelState.Count);
+
+            var entry = Assert.Single(modelState, e => e.Key == "p.Name").Value;
+            Assert.Equal("Accord", entry.AttemptedValue);
+            Assert.Equal("Accord", entry.RawValue);
+
+            Assert.Single(modelState, e => e.Key == "p.Specs");
         }
 
         private void UpdateRequest(HttpRequest request, string data, string name)

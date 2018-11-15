@@ -3,6 +3,10 @@
 
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
+using BasicWebSite.Filters;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;
 
 namespace BasicWebSite.Controllers
@@ -59,6 +63,13 @@ namespace BasicWebSite.Controllers
             return RedirectToAction("GetTempDataMultiple");
         }
 
+        public async Task SetTempDataResponseWrite()
+        {
+            TempData["value1"] = "steve";
+
+            await Response.WriteAsync("Steve!");
+        }
+
         public string GetTempDataMultiple()
         {
             var value1 = TempData["key1"].ToString();
@@ -67,6 +78,51 @@ namespace BasicWebSite.Controllers
             var value4 = (DateTime)TempData["key4"];
             var value5 = (Guid)TempData["key5"];
             return $"{value1} {value2.ToString()} {value3.Count.ToString()} {value4.ToString()} {value5.ToString()}";
+        }
+
+        [HttpGet]
+        public IActionResult SetTempDataInActionResult()
+        {
+            return new StoreIntoTempDataActionResult();
+        }
+
+        [HttpGet]
+        public string GetTempDataSetInActionResult()
+        {
+            return TempData["Name"]?.ToString();
+        }
+
+        [HttpGet]
+        public IActionResult SetLargeValueInTempData(int size, char character)
+        {
+            TempData["LargeValue"] = new string(character, size);
+            return Ok();
+        }
+
+        [HttpGet]
+        public string GetLargeValueFromTempData()
+        {
+            return TempData["LargeValue"]?.ToString();
+        }
+
+        [HttpGet]
+        [TestExceptionFilter]
+        public IActionResult UnhandledExceptionAndSettingTempData()
+        {
+            TempData[nameof(UnhandledExceptionAndSettingTempData)] = "James";
+            throw new InvalidOperationException($"Exception from action {nameof(UnhandledExceptionAndSettingTempData)}");
+        }
+
+        [HttpGet]
+        public string UnhandledExceptionAndGetTempData()
+        {
+            return TempData[nameof(UnhandledExceptionAndSettingTempData)]?.ToString();
+        }
+
+        [HttpGet]
+        public void GrantConsent()
+        {
+            HttpContext.Features.Get<ITrackingConsentFeature>().GrantConsent();
         }
     }
 }

@@ -2,6 +2,7 @@
 // Licensed under the Apache License, Version 2.0. See License.txt in the project root for license information.
 
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc.Rendering;
 using Microsoft.AspNetCore.Mvc.ViewFeatures;
@@ -16,6 +17,7 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
     [HtmlTargetElement("span", Attributes = ValidationForAttributeName)]
     public class ValidationMessageTagHelper : TagHelper
     {
+        private const string DataValidationForAttributeName = "data-valmsg-for";
         private const string ValidationForAttributeName = "asp-validation-for";
 
         /// <summary>
@@ -28,13 +30,7 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
         }
 
         /// <inheritdoc />
-        public override int Order
-        {
-            get
-            {
-                return -1000;
-            }
-        }
+        public override int Order => -1000;
 
         [HtmlAttributeNotBound]
         [ViewContext]
@@ -42,9 +38,6 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
 
         protected IHtmlGenerator Generator { get; }
 
-        /// <summary>
-        /// Name to be validated on the current model.
-        /// </summary>
         [HtmlAttributeName(ValidationForAttributeName)]
         public ModelExpression For { get; set; }
 
@@ -64,34 +57,49 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
 
             if (For != null)
             {
+                // Ensure Generator does not throw due to empty "fullName" if user provided data-valmsg-for attribute.
+                // Assume data-valmsg-for value is non-empty if attribute is present at all. Should align with name of
+                // another tag helper e.g. an <input/> and those tag helpers bind Name.
+                IDictionary<string, object> htmlAttributes = null;
+                if (string.IsNullOrEmpty(For.Name) &&
+                    string.IsNullOrEmpty(ViewContext.ViewData.TemplateInfo.HtmlFieldPrefix) &&
+                    output.Attributes.ContainsName(DataValidationForAttributeName))
+                {
+                    htmlAttributes = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        { DataValidationForAttributeName, "-non-empty-value-" },
+                    };
+                }
+
+                string message = null;
+                if (!output.IsContentModified)
+                {
+                    var tagHelperContent = await output.GetChildContentAsync();
+
+                    // We check for whitespace to detect scenarios such as:
+                    // <span validation-for="Name">
+                    // </span>
+                    if (!tagHelperContent.IsEmptyOrWhiteSpace)
+                    {
+                        message = tagHelperContent.GetContent();
+                    }
+                }
                 var tagBuilder = Generator.GenerateValidationMessage(
                     ViewContext,
                     For.ModelExplorer,
                     For.Name,
-                    message: null,
+                    message: message,
                     tag: null,
-                    htmlAttributes: null);
+                    htmlAttributes: htmlAttributes);
 
                 if (tagBuilder != null)
                 {
                     output.MergeAttributes(tagBuilder);
 
-                    // We check for whitespace to detect scenarios such as:
-                    // <span validation-for="Name">
-                    // </span>
-                    if (!output.IsContentModified)
+                    // Do not update the content if another tag helper targeting this element has already done so.
+                    if (!output.IsContentModified && tagBuilder.HasInnerHtml)
                     {
-                        var childContent = await output.GetChildContentAsync();
-
-                        if (childContent.IsEmptyOrWhiteSpace)
-                        {
-                            // Provide default label text since there was nothing useful in the Razor source.
-                            output.Content.SetHtmlContent(tagBuilder.InnerHtml);
-                        }
-                        else
-                        {
-                            output.Content.SetHtmlContent(childContent);
-                        }
+                        output.Content.SetHtmlContent(tagBuilder.InnerHtml);
                     }
                 }
             }

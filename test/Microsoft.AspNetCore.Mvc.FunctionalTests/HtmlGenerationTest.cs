@@ -3,12 +3,15 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
 using Xunit;
 
 namespace Microsoft.AspNetCore.Mvc.FunctionalTests
@@ -23,13 +26,20 @@ namespace Microsoft.AspNetCore.Mvc.FunctionalTests
             MvcTestFixture<HtmlGenerationWebSite.Startup> fixture,
             MvcEncodedTestFixture<HtmlGenerationWebSite.Startup> encodedFixture)
         {
-            Client = fixture.Client;
-            EncodedClient = encodedFixture.Client;
+            Factory = fixture.Factories.FirstOrDefault() ?? fixture.WithWebHostBuilder(ConfigureWebHostBuilder);
+
+            Client = fixture.CreateDefaultClient();
+            EncodedClient = encodedFixture.CreateDefaultClient();
         }
+
+        private static void ConfigureWebHostBuilder(IWebHostBuilder builder) =>
+            builder.UseStartup<HtmlGenerationWebSite.Startup>();
 
         public HttpClient Client { get; }
 
         public HttpClient EncodedClient { get; }
+
+        public WebApplicationFactory<HtmlGenerationWebSite.Startup> Factory { get; }
 
         public static TheoryData<string, string> WebPagesData
         {
@@ -61,14 +71,29 @@ namespace Microsoft.AspNetCore.Mvc.FunctionalTests
                     // Only attribute order should differ.
                     { "Order", "/HtmlGeneration_Order/Submit" },
                     { "OrderUsingHtmlHelpers", "/HtmlGeneration_Order/Submit" },
+                    // Testing PartialTagHelper
+                    { "PartialTagHelperWithoutModel", null },
+                    { "Warehouse", null },
                     // Testing InputTagHelpers invoked in the partial views
                     { "ProductList", "/HtmlGeneration_Product" },
+                    { "ProductListUsingTagHelpers", "/HtmlGeneration_Product" },
+                    { "ProductListUsingTagHelpersWithNullModel", "/HtmlGeneration_Product" },
                     // Testing the ScriptTagHelper
                     { "Script", null },
                 };
 
                 return data;
             }
+        }
+
+        [Fact]
+        public async Task EnumValues_SerializeCorrectly()
+        {
+            // Arrange & Act
+            var response = await Client.GetStringAsync("http://localhost/HtmlGeneration_Home/Enum");
+
+            // Assert
+            Assert.Equal($"Vrijdag{Environment.NewLine}Month: FirstOne", response, ignoreLineEndingDifferences: true);
         }
 
         [Theory]
@@ -96,11 +121,7 @@ namespace Microsoft.AspNetCore.Mvc.FunctionalTests
 #if GENERATE_BASELINES
                 ResourceFile.UpdateFile(_resourcesAssembly, outputFile, expectedContent, responseContent);
 #else
-                // Mono issue - https://github.com/aspnet/External/issues/19
-                Assert.Equal(
-                    PlatformNormalizer.NormalizeContent(expectedContent.Trim()),
-                    responseContent,
-                    ignoreLineEndingDifferences: true);
+                Assert.Equal(expectedContent.Trim(), responseContent, ignoreLineEndingDifferences: true);
 #endif
             }
             else
@@ -112,13 +133,38 @@ namespace Microsoft.AspNetCore.Mvc.FunctionalTests
                 ResourceFile.UpdateFile(_resourcesAssembly, outputFile, expectedContent, responseContent);
 #else
                 expectedContent = string.Format(expectedContent, forgeryToken);
-                // Mono issue - https://github.com/aspnet/External/issues/19
-                Assert.Equal(
-                    PlatformNormalizer.NormalizeContent(expectedContent.Trim()),
-                    responseContent,
-                    ignoreLineEndingDifferences: true);
+                Assert.Equal(expectedContent.Trim(), responseContent, ignoreLineEndingDifferences: true);
 #endif
             }
+        }
+
+        [Fact]
+        public async Task HtmlGenerationWebSite_LinkGeneration_With21CompatibilityBehavior()
+        {
+            // Arrange
+            var client = Factory
+                 .WithWebHostBuilder(builder => builder.UseStartup<HtmlGenerationWebSite.StartupWith21CompatibilityBehavior>())
+                 .CreateDefaultClient();
+            var expectedMediaType = MediaTypeHeaderValue.Parse("text/html; charset=utf-8");
+            var outputFile = "compiler/resources/HtmlGenerationWebSite.HtmlGeneration_Home.Index21Compat.html";
+            var expectedContent =
+                await ResourceFile.ReadResourceAsync(_resourcesAssembly, outputFile, sourceFile: false);
+
+            // Act
+            // The host is not important as everything runs in memory and tests are isolated from each other.
+            var response = await client.GetAsync("http://localhost/HtmlGeneration_Home/");
+            var responseContent = await response.Content.ReadAsStringAsync();
+
+            // Assert
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.Equal(expectedMediaType, response.Content.Headers.ContentType);
+
+            responseContent = responseContent.Trim();
+#if GENERATE_BASELINES
+            ResourceFile.UpdateFile(_resourcesAssembly, outputFile, expectedContent, responseContent);
+#else
+            Assert.Equal(expectedContent.Trim(), responseContent, ignoreLineEndingDifferences: true);
+#endif
         }
 
         public static TheoryData<string, string> EncodedPagesData
@@ -164,9 +210,8 @@ namespace Microsoft.AspNetCore.Mvc.FunctionalTests
 #if GENERATE_BASELINES
                 ResourceFile.UpdateFile(_resourcesAssembly, outputFile, expectedContent, responseContent);
 #else
-                // Mono issue - https://github.com/aspnet/External/issues/19
                 Assert.Equal(
-                    PlatformNormalizer.NormalizeContent(expectedContent.Trim()),
+                    expectedContent.Trim(),
                     responseContent,
                     ignoreLineEndingDifferences: true);
 #endif
@@ -180,11 +225,7 @@ namespace Microsoft.AspNetCore.Mvc.FunctionalTests
                 ResourceFile.UpdateFile(_resourcesAssembly, outputFile, expectedContent, responseContent);
 #else
                 expectedContent = string.Format(expectedContent, forgeryToken);
-                // Mono issue - https://github.com/aspnet/External/issues/19
-                Assert.Equal(
-                    PlatformNormalizer.NormalizeContent(expectedContent.Trim()),
-                    responseContent,
-                    ignoreLineEndingDifferences: true);
+                Assert.Equal(expectedContent.Trim(), responseContent, ignoreLineEndingDifferences: true);
 #endif
             }
         }
@@ -254,11 +295,7 @@ namespace Microsoft.AspNetCore.Mvc.FunctionalTests
             ResourceFile.UpdateFile(_resourcesAssembly, outputFile, expectedContent, responseContent);
 #else
             expectedContent = string.Format(expectedContent, forgeryToken);
-            // Mono issue - https://github.com/aspnet/External/issues/19
-            Assert.Equal(
-                PlatformNormalizer.NormalizeContent(expectedContent.Trim()),
-                responseContent,
-                ignoreLineEndingDifferences: true);
+            Assert.Equal(expectedContent.Trim(), responseContent, ignoreLineEndingDifferences: true);
 #endif
         }
 
@@ -367,7 +404,7 @@ namespace Microsoft.AspNetCore.Mvc.FunctionalTests
             Assert.Equal(expected2, response2.Trim());
 
             // Act - 3
-            // Resend the cookiesless request and cached result from the first response.
+            // Resend the cookieless request and cached result from the first response.
             var response3 = await Client.GetStringAsync("/catalog/cart?correlationid=3");
 
             // Assert - 3
@@ -502,18 +539,18 @@ Products: Music Systems, Televisions (3)";
         public async Task EditorTemplateWithNoModel_RendersWithCorrectMetadata()
         {
             // Arrange
-            var expected = PlatformNormalizer.NormalizeContent(
+            var expected =
                 "<label class=\"control-label col-md-2\" for=\"Name\">ItemName</label>" + Environment.NewLine +
                 "<input id=\"Name\" name=\"Name\" type=\"text\" value=\"\" />" + Environment.NewLine + Environment.NewLine +
                 "<label class=\"control-label col-md-2\" for=\"Id\">ItemNo</label>" + Environment.NewLine +
                 "<input data-val=\"true\" data-val-required=\"The ItemNo field is required.\" id=\"Id\" name=\"Id\" type=\"text\" value=\"\" />" +
-                Environment.NewLine + Environment.NewLine);
+                Environment.NewLine + Environment.NewLine;
 
             // Act
             var response = await Client.GetStringAsync("http://localhost/HtmlGeneration_Home/ItemUsingSharedEditorTemplate");
 
             // Assert
-            Assert.Equal(expected, response);
+            Assert.Equal(expected, response, ignoreLineEndingDifferences: true);
         }
 
         [Fact]
@@ -527,7 +564,135 @@ Products: Music Systems, Televisions (3)";
             var response = await Client.GetStringAsync("http://localhost/HtmlGeneration_Home/ItemUsingModelSpecificEditorTemplate");
 
             // Assert
-            Assert.Equal(expected, response);
+            Assert.Equal(expected, response, ignoreLineEndingDifferences: true);
+        }
+
+        // We want to make sure that for 'weird' model expressions involving:
+        // - fields
+        // - statics
+        // - private
+        //
+        // These tests verify that we don't throw, and can evaluate the expression to get the model
+        // value. One quirk of behavior for these cases is that we can't return a correct model metadata
+        // instance (this is true for anything other than a public instance property). We're not overly
+        // concerned with that, and so the accuracy of the model metadata is not verified by the test.
+        [Theory]
+        [InlineData("GetWeirdWithHtmlHelpers")]
+        [InlineData("GetWeirdWithTagHelpers")]
+        public async Task WeirdModelExpressions_CanAccessModelValues(string action)
+        {
+            // Arrange
+            var url = "http://localhost/HtmlGeneration_WeirdExpressions/" + action;
+
+            // Act
+            var response = await Client.GetStringAsync(url);
+
+            // Assert
+            Assert.Contains("Hello, Field World!", response);
+            Assert.Contains("Hello, Static World!", response);
+            Assert.Contains("Hello, Private World!", response);
+        }
+
+        [Fact]
+        public async Task PartialTagHelper_AllowsPassingModelValue()
+        {
+            // Arrange
+            var url = "/HtmlGeneration_Home/StatusMessage";
+
+            // Act
+            var document = await Client.GetHtmlDocumentAsync(url);
+
+            // Assert
+            var banner = document.RequiredQuerySelector(".banner");
+            Assert.Equal("Some status message", banner.TextContent);
+        }
+
+        [Fact]
+        public async Task PartialTagHelper_AllowsPassingNullModelValue()
+        {
+            // Regression test for https://github.com/aspnet/Mvc/issues/7667.
+            // Arrange
+            var url = "/HtmlGeneration_Home/NullStatusMessage";
+
+            // Act
+            var document = await Client.GetHtmlDocumentAsync(url);
+
+            // Assert
+            var banner = document.RequiredQuerySelector(".banner");
+            Assert.Empty(banner.TextContent);
+        }
+
+        [Fact]
+        public async Task PartialTagHelper_AllowsUsingFallback()
+        {
+            // Arrange
+            var url = "/Customer/PartialWithFallback";
+
+            // Act
+            var document = await Client.GetHtmlDocumentAsync(url);
+
+            // Assert
+            var content = document.RequiredQuerySelector("#content");
+            Assert.Equal("Hello from fallback", content.TextContent);
+        }
+
+        [Fact]
+        public async Task PartialTagHelper_AllowsUsingOptional()
+        {
+            // Arrange
+            var url = "/Customer/PartialWithOptional";
+
+            // Act
+            var document = await Client.GetHtmlDocumentAsync(url);
+
+            // Assert
+            var content = document.RequiredQuerySelector("#content");
+            Assert.Empty(content.TextContent);
+        }
+
+        [Fact]
+        public async Task ValidationProviderAttribute_ValidationTagHelpers_GeneratesExpectedDataAttributes()
+        {
+            // Act
+            var document = await Client.GetHtmlDocumentAsync("HtmlGeneration_Home/ValidationProviderAttribute");
+
+            // Assert
+            var firstName = document.RequiredQuerySelector("#FirstName");
+            Assert.Equal("true", firstName.GetAttribute("data-val"));
+            Assert.Equal("The FirstName field is required.", firstName.GetAttribute("data-val-required"));
+            Assert.Equal("The field FirstName must be a string with a maximum length of 5.", firstName.GetAttribute("data-val-length"));
+            Assert.Equal("5", firstName.GetAttribute("data-val-length-max"));
+            Assert.Equal("The field FirstName must match the regular expression '[A-Za-z]*'.", firstName.GetAttribute("data-val-regex"));
+            Assert.Equal("[A-Za-z]*", firstName.GetAttribute("data-val-regex-pattern"));
+
+            var lastName = document.RequiredQuerySelector("#LastName");
+            Assert.Equal("true", lastName.GetAttribute("data-val"));
+            Assert.Equal("The LastName field is required.", lastName.GetAttribute("data-val-required"));
+            Assert.Equal("The field LastName must be a string with a maximum length of 6.", lastName.GetAttribute("data-val-length"));
+            Assert.Equal("6", lastName.GetAttribute("data-val-length-max"));
+            Assert.False(lastName.HasAttribute("data-val-regex"));
+        }
+
+        [Fact]
+        public async Task ValidationProviderAttribute_ValidationTagHelpers_GeneratesExpectedSpansAndDivsOnValidationError()
+        {
+            // Arrange
+            var request = new HttpRequestMessage(HttpMethod.Post, "HtmlGeneration_Home/ValidationProviderAttribute");
+            request.Content = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                { "FirstName", "TestFirstName" },
+            });
+
+            // Act
+            var response = await Client.SendAsync(request);
+
+            // Assert
+            await response.AssertStatusCodeAsync(HttpStatusCode.OK);
+            var document = await response.GetHtmlDocumentAsync();
+            Assert.Collection(
+                document.QuerySelectorAll("div.validation-summary-errors ul li"),
+                item => Assert.Equal("The field FirstName must be a string with a maximum length of 5.", item.TextContent),
+                item => Assert.Equal("The LastName field is required.", item.TextContent));
         }
 
         private static HttpRequestMessage RequestWithLocale(string url, string locale)

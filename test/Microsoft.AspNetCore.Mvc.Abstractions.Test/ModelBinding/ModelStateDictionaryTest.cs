@@ -2,9 +2,9 @@
 // Licensed under the Apache License, Version 2.0. See License.txt in the project root for license information.
 
 using System;
-using System.Diagnostics;
-using Microsoft.AspNetCore.Mvc.Internal;
+using Microsoft.AspNetCore.Mvc.Formatters;
 using Microsoft.AspNetCore.Mvc.ModelBinding.Metadata;
+using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace Microsoft.AspNetCore.Mvc.ModelBinding
@@ -119,7 +119,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             dictionary.Clear();
 
             // Assert
-            Assert.Equal(0, dictionary.Count);
+            Assert.Empty(dictionary);
             Assert.Equal(0, dictionary.ErrorCount);
             Assert.Empty(dictionary);
             Assert.Equal(ModelValidationState.Valid, dictionary.ValidationState);
@@ -135,7 +135,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             dictionary.Clear();
 
             // Assert
-            Assert.Equal(0, dictionary.Count);
+            Assert.Empty(dictionary);
             Assert.Equal(0, dictionary.ErrorCount);
             Assert.Empty(dictionary);
             Assert.Equal(ModelValidationState.Valid, dictionary.ValidationState);
@@ -180,7 +180,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
 
             // Assert
             Assert.Equal(0, source.ErrorCount);
-            Assert.Equal(1, source.Count);
+            Assert.Single(source);
             Assert.Equal(ModelValidationState.Skipped, source["key"].ValidationState);
         }
 
@@ -239,7 +239,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
 
             // Assert
             Assert.Equal(0, source.ErrorCount);
-            Assert.Equal(1, source.Count);
+            Assert.Single(source);
             Assert.Equal(ModelValidationState.Valid, source["key"].ValidationState);
         }
 
@@ -276,12 +276,29 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
 
             // Assert
             Assert.Equal(2, target.ErrorCount);
-            Assert.Equal(1, target.Count);
+            Assert.Single(target);
             var actual = target["key"];
             Assert.Equal(entry.RawValue, actual.RawValue);
             Assert.Equal(entry.AttemptedValue, actual.AttemptedValue);
             Assert.Equal(entry.Errors, actual.Errors);
             Assert.Equal(entry.ValidationState, actual.ValidationState);
+        }
+
+        [Fact]
+        public void TryAddModelException_Succeeds()
+        {
+            // Arrange
+            var dictionary = new ModelStateDictionary();
+            var exception = new TestException();
+
+            // Act
+            dictionary.TryAddModelException("some key", exception);
+
+            // Assert
+            var kvp = Assert.Single(dictionary);
+            Assert.Equal("some key", kvp.Key);
+            var error = Assert.Single(kvp.Value.Errors);
+            Assert.Same(exception, error.Exception);
         }
 
         [Fact]
@@ -694,13 +711,15 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             };
             var provider = new EmptyModelMetadataProvider();
             var metadata = provider.GetMetadataForProperty(typeof(string), nameof(string.Length));
+
+            // Act
             dictionary.AddModelError("key1", "error1");
             dictionary.AddModelError("key2", new Exception(), metadata);
             dictionary.AddModelError("key3", new Exception(), metadata);
             dictionary.AddModelError("key4", "error4");
             dictionary.AddModelError("key5", "error5");
 
-            // Act and Assert
+            // Assert
             Assert.True(dictionary.HasReachedMaxErrors);
             Assert.Equal(5, dictionary.ErrorCount);
             var error = Assert.Single(dictionary[string.Empty].Errors);
@@ -709,6 +728,35 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
 
             // TooManyModelErrorsException added instead of key5 error.
             Assert.DoesNotContain("key5", dictionary.Keys);
+        }
+
+        [Fact]
+        public void TryAddModelException_ReturnsFalse_AndAddsMaxModelErrorMessage()
+        {
+            // Arrange
+            var expected = "The maximum number of allowed model errors has been reached.";
+            var dictionary = new ModelStateDictionary
+            {
+                MaxAllowedErrors = 3
+            };
+
+            // Act and Assert
+            var result = dictionary.TryAddModelError("key1", "error1");
+            Assert.True(result);
+
+            result = dictionary.TryAddModelException("key2", new Exception());
+            Assert.True(result);
+
+            result = dictionary.TryAddModelException("key3", new Exception());
+            Assert.False(result);
+
+            Assert.Equal(3, dictionary.Count);
+            var error = Assert.Single(dictionary[string.Empty].Errors);
+            Assert.IsType<TooManyModelErrorsException>(error.Exception);
+            Assert.Equal(expected, error.Exception.Message);
+
+            // TooManyModelErrorsException added instead of key3 exception.
+            Assert.DoesNotContain("key3", dictionary.Keys);
         }
 
         [Fact]
@@ -864,6 +912,21 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
         }
 
         [Fact]
+        public void ModelStateDictionary_ReturnExceptionMessage_WhenModelStateNotSet()
+        {
+            // Arrange
+            var dictionary = new ModelStateDictionary();
+            var exception = new FormatException("The supplied value is invalid for Length.");
+
+            // Act
+            dictionary.TryAddModelException("key", exception);
+
+            // Assert
+            var error = Assert.Single(dictionary["key"].Errors);
+            Assert.Same(exception, error.Exception);
+        }
+
+        [Fact]
         public void ModelStateDictionary_ReturnGenericErrorMessage_WhenModelStateNotSet()
         {
             // Arrange
@@ -887,20 +950,13 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             var expected = "Hmm, the supplied value is not valid for Length.";
             var dictionary = new ModelStateDictionary();
 
-            var messageProvider = new ModelBindingMessageProvider
-            {
-                MissingBindRequiredValueAccessor = name => "Unexpected MissingBindRequiredValueAccessor use",
-                MissingKeyOrValueAccessor = () => "Unexpected MissingKeyOrValueAccessor use",
-                ValueMustNotBeNullAccessor = value => "Unexpected ValueMustNotBeNullAccessor use",
-                AttemptedValueIsInvalidAccessor =
-                    (value, name) => "Unexpected InvalidValueWithKnownAttemptedValueAccessor use",
-                UnknownValueIsInvalidAccessor = name => $"Hmm, the supplied value is not valid for { name }.",
-                ValueIsInvalidAccessor = value => "Unexpected InvalidValueWithUnknownModelErrorAccessor use",
-                ValueMustBeANumberAccessor = name => "Unexpected ValueMustBeANumberAccessor use",
-            };
-            var bindingMetadataProvider = new DefaultBindingMetadataProvider(messageProvider);
+            var bindingMetadataProvider = new DefaultBindingMetadataProvider();
             var compositeProvider = new DefaultCompositeMetadataDetailsProvider(new[] { bindingMetadataProvider });
-            var provider = new DefaultModelMetadataProvider(compositeProvider);
+            var optionsAccessor = new OptionsAccessor();
+            optionsAccessor.Value.ModelBindingMessageProvider.SetUnknownValueIsInvalidAccessor(
+                name => $"Hmm, the supplied value is not valid for { name }.");
+
+            var provider = new DefaultModelMetadataProvider(compositeProvider, optionsAccessor);
             var metadata = provider.GetMetadataForProperty(typeof(string), nameof(string.Length));
 
             // Act
@@ -911,6 +967,76 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             Assert.Equal("key", entry.Key);
             var error = Assert.Single(entry.Value.Errors);
             Assert.Equal(expected, error.ErrorMessage);
+        }
+
+        [Fact]
+        public void ModelStateDictionary_AddsCustomErrorMessage_WhenModelStateNotSet_WithParameter()
+        {
+            // Arrange
+            var expected = "Hmm, the supplied value is not valid.";
+            var dictionary = new ModelStateDictionary();
+
+            var bindingMetadataProvider = new DefaultBindingMetadataProvider();
+            var compositeProvider = new DefaultCompositeMetadataDetailsProvider(new[] { bindingMetadataProvider });
+            var optionsAccessor = new OptionsAccessor();
+            optionsAccessor.Value.ModelBindingMessageProvider.SetNonPropertyUnknownValueIsInvalidAccessor(
+                () => "Hmm, the supplied value is not valid.");
+
+            var method = typeof(string).GetMethod(nameof(string.Copy));
+            var parameter = method.GetParameters()[0]; // Copy(string str)
+            var provider = new DefaultModelMetadataProvider(compositeProvider, optionsAccessor);
+            var metadata = provider.GetMetadataForParameter(parameter);
+
+            // Act
+            dictionary.TryAddModelError("key", new FormatException(), metadata);
+
+            // Assert
+            var entry = Assert.Single(dictionary);
+            Assert.Equal("key", entry.Key);
+            var error = Assert.Single(entry.Value.Errors);
+            Assert.Equal(expected, error.ErrorMessage);
+        }
+
+        [Fact]
+        public void ModelStateDictionary_AddsCustomErrorMessage_WhenModelStateNotSet_WithType()
+        {
+            // Arrange
+            var expected = "Hmm, the supplied value is not valid.";
+            var dictionary = new ModelStateDictionary();
+
+            var bindingMetadataProvider = new DefaultBindingMetadataProvider();
+            var compositeProvider = new DefaultCompositeMetadataDetailsProvider(new[] { bindingMetadataProvider });
+            var optionsAccessor = new OptionsAccessor();
+            optionsAccessor.Value.ModelBindingMessageProvider.SetNonPropertyUnknownValueIsInvalidAccessor(
+                () => "Hmm, the supplied value is not valid.");
+
+            var provider = new DefaultModelMetadataProvider(compositeProvider, optionsAccessor);
+            var metadata = provider.GetMetadataForType(typeof(int));
+
+            // Act
+            dictionary.TryAddModelError("key", new FormatException(), metadata);
+
+            // Assert
+            var entry = Assert.Single(dictionary);
+            Assert.Equal("key", entry.Key);
+            var error = Assert.Single(entry.Value.Errors);
+            Assert.Equal(expected, error.ErrorMessage);
+        }
+
+        [Fact]
+        public void TryAddModelException_ReturnExceptionMessage_WhenModelStateSet()
+        {
+            // Arrange
+            var dictionary = new ModelStateDictionary();
+            dictionary.SetModelValue("key", new string[] { "some value" }, "some value");
+            var exception = new FormatException("The value 'some value' is not valid for Length.");
+
+            // Act
+            dictionary.TryAddModelException("key", exception);
+
+            // Assert
+            var error = Assert.Single(dictionary["key"].Errors);
+            Assert.Same(exception, error.Exception);
         }
 
         [Fact]
@@ -939,20 +1065,13 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             var dictionary = new ModelStateDictionary();
             dictionary.SetModelValue("key", new string[] { "some value" }, "some value");
 
-            var messageProvider = new ModelBindingMessageProvider
-            {
-                MissingBindRequiredValueAccessor = name => "Unexpected MissingBindRequiredValueAccessor use",
-                MissingKeyOrValueAccessor = () => "Unexpected MissingKeyOrValueAccessor use",
-                ValueMustNotBeNullAccessor = value => "Unexpected ValueMustNotBeNullAccessor use",
-                AttemptedValueIsInvalidAccessor =
-                    (value, name) => $"Hmm, the value '{ value }' is not valid for { name }.",
-                UnknownValueIsInvalidAccessor = name => "Unexpected InvalidValueWithUnknownAttemptedValueAccessor use",
-                ValueIsInvalidAccessor = value => "Unexpected InvalidValueWithUnknownModelErrorAccessor use",
-                ValueMustBeANumberAccessor = name => "Unexpected ValueMustBeANumberAccessor use",
-            };
-            var bindingMetadataProvider = new DefaultBindingMetadataProvider(messageProvider);
+            var bindingMetadataProvider = new DefaultBindingMetadataProvider();
             var compositeProvider = new DefaultCompositeMetadataDetailsProvider(new[] { bindingMetadataProvider });
-            var provider = new DefaultModelMetadataProvider(compositeProvider);
+            var optionsAccessor = new OptionsAccessor();
+            optionsAccessor.Value.ModelBindingMessageProvider.SetAttemptedValueIsInvalidAccessor(
+                (value, name) => $"Hmm, the value '{ value }' is not valid for { name }.");
+
+            var provider = new DefaultModelMetadataProvider(compositeProvider, optionsAccessor);
             var metadata = provider.GetMetadataForProperty(typeof(string), nameof(string.Length));
 
             // Act
@@ -966,7 +1085,63 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
         }
 
         [Fact]
-        public void ModelStateDictionary_NoErrorMessage_ForNonFormatException()
+        public void ModelStateDictionary_AddsCustomErrorMessage_WhenModelStateSet_WithParameter()
+        {
+            // Arrange
+            var expected = "Hmm, the value 'some value' is not valid.";
+            var dictionary = new ModelStateDictionary();
+            dictionary.SetModelValue("key", new string[] { "some value" }, "some value");
+
+            var bindingMetadataProvider = new DefaultBindingMetadataProvider();
+            var compositeProvider = new DefaultCompositeMetadataDetailsProvider(new[] { bindingMetadataProvider });
+            var optionsAccessor = new OptionsAccessor();
+            optionsAccessor.Value.ModelBindingMessageProvider.SetNonPropertyAttemptedValueIsInvalidAccessor(
+                value => $"Hmm, the value '{ value }' is not valid.");
+
+            var method = typeof(string).GetMethod(nameof(string.Copy));
+            var parameter = method.GetParameters()[0]; // Copy(string str)
+            var provider = new DefaultModelMetadataProvider(compositeProvider, optionsAccessor);
+            var metadata = provider.GetMetadataForParameter(parameter);
+
+            // Act
+            dictionary.TryAddModelError("key", new FormatException(), metadata);
+
+            // Assert
+            var entry = Assert.Single(dictionary);
+            Assert.Equal("key", entry.Key);
+            var error = Assert.Single(entry.Value.Errors);
+            Assert.Equal(expected, error.ErrorMessage);
+        }
+
+        [Fact]
+        public void ModelStateDictionary_AddsCustomErrorMessage_WhenModelStateSet_WithType()
+        {
+            // Arrange
+            var expected = "Hmm, the value 'some value' is not valid.";
+            var dictionary = new ModelStateDictionary();
+            dictionary.SetModelValue("key", new string[] { "some value" }, "some value");
+
+            var bindingMetadataProvider = new DefaultBindingMetadataProvider();
+            var compositeProvider = new DefaultCompositeMetadataDetailsProvider(new[] { bindingMetadataProvider });
+            var optionsAccessor = new OptionsAccessor();
+            optionsAccessor.Value.ModelBindingMessageProvider.SetNonPropertyAttemptedValueIsInvalidAccessor(
+                (value) => $"Hmm, the value '{ value }' is not valid.");
+
+            var provider = new DefaultModelMetadataProvider(compositeProvider, optionsAccessor);
+            var metadata = provider.GetMetadataForType(typeof(int));
+
+            // Act
+            dictionary.TryAddModelError("key", new FormatException(), metadata);
+
+            // Assert
+            var entry = Assert.Single(dictionary);
+            Assert.Equal("key", entry.Key);
+            var error = Assert.Single(entry.Value.Errors);
+            Assert.Equal(expected, error.ErrorMessage);
+        }
+
+        [Fact]
+        public void ModelStateDictionary_NoErrorMessage_ForUnrecognizedException()
         {
             // Arrange
             var dictionary = new ModelStateDictionary();
@@ -980,6 +1155,45 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             // Assert
             var error = Assert.Single(dictionary["key"].Errors);
             Assert.Empty(error.ErrorMessage);
+        }
+
+        [Fact]
+        public void TryAddModelException_AddsErrorMessage_ForInputFormatterException()
+        {
+            // Arrange
+            var dictionary = new ModelStateDictionary();
+            var exception = new InputFormatterException("This is an InputFormatterException.");
+
+            // Act
+            dictionary.TryAddModelException("key", exception);
+
+            // Assert
+            var entry = Assert.Single(dictionary);
+            Assert.Equal("key", entry.Key);
+            var error = Assert.Single(entry.Value.Errors);
+            Assert.Same(exception, error.Exception);
+        }
+
+        [Fact]
+        public void ModelStateDictionary_AddsErrorMessage_ForInputFormatterException()
+        {
+            // Arrange
+            var expectedMessage = "This is an InputFormatterException";
+            var dictionary = new ModelStateDictionary();
+
+            var bindingMetadataProvider = new DefaultBindingMetadataProvider();
+            var compositeProvider = new DefaultCompositeMetadataDetailsProvider(new[] { bindingMetadataProvider });
+            var provider = new DefaultModelMetadataProvider(compositeProvider, new OptionsAccessor());
+            var metadata = provider.GetMetadataForType(typeof(int));
+
+            // Act
+            dictionary.TryAddModelError("key", new InputFormatterException(expectedMessage), metadata);
+
+            // Assert
+            var entry = Assert.Single(dictionary);
+            Assert.Equal("key", entry.Key);
+            var error = Assert.Single(entry.Value.Errors);
+            Assert.Equal(expectedMessage, error.ErrorMessage);
         }
 
         [Fact]
@@ -998,13 +1212,13 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             dictionary.ClearValidationState("Property4");
 
             // Assert
-            Assert.Equal(0, dictionary["Property1"].Errors.Count);
+            Assert.Empty(dictionary["Property1"].Errors);
             Assert.Equal(ModelValidationState.Unvalidated, dictionary["Property1"].ValidationState);
-            Assert.Equal(0, dictionary["Property2"].Errors.Count);
+            Assert.Empty(dictionary["Property2"].Errors);
             Assert.Equal(ModelValidationState.Unvalidated, dictionary["Property2"].ValidationState);
-            Assert.Equal(1, dictionary["Property3"].Errors.Count);
+            Assert.Single(dictionary["Property3"].Errors);
             Assert.Equal(ModelValidationState.Invalid, dictionary["Property3"].ValidationState);
-            Assert.Equal(0, dictionary["Property4"].Errors.Count);
+            Assert.Empty(dictionary["Property4"].Errors);
             Assert.Equal(ModelValidationState.Unvalidated, dictionary["Property4"].ValidationState);
         }
 
@@ -1025,19 +1239,19 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             dictionary.ClearValidationState("Product");
 
             // Assert
-            Assert.Equal(0, dictionary["Product"].Errors.Count);
+            Assert.Empty(dictionary["Product"].Errors);
             Assert.Equal(ModelValidationState.Unvalidated, dictionary["Product"].ValidationState);
-            Assert.Equal(0, dictionary["Product.Detail1"].Errors.Count);
+            Assert.Empty(dictionary["Product.Detail1"].Errors);
             Assert.Equal(ModelValidationState.Unvalidated, dictionary["Product.Detail1"].ValidationState);
-            Assert.Equal(0, dictionary["Product.Detail2[0]"].Errors.Count);
+            Assert.Empty(dictionary["Product.Detail2[0]"].Errors);
             Assert.Equal(ModelValidationState.Unvalidated, dictionary["Product.Detail2[0]"].ValidationState);
-            Assert.Equal(0, dictionary["Product.Detail2[1]"].Errors.Count);
+            Assert.Empty(dictionary["Product.Detail2[1]"].Errors);
             Assert.Equal(ModelValidationState.Unvalidated, dictionary["Product.Detail2[1]"].ValidationState);
-            Assert.Equal(0, dictionary["Product.Detail2[2]"].Errors.Count);
+            Assert.Empty(dictionary["Product.Detail2[2]"].Errors);
             Assert.Equal(ModelValidationState.Unvalidated, dictionary["Product.Detail2[2]"].ValidationState);
-            Assert.Equal(0, dictionary["Product.Detail3"].Errors.Count);
+            Assert.Empty(dictionary["Product.Detail3"].Errors);
             Assert.Equal(ModelValidationState.Unvalidated, dictionary["Product.Detail3"].ValidationState);
-            Assert.Equal(1, dictionary["ProductName"].Errors.Count);
+            Assert.Single(dictionary["ProductName"].Errors);
             Assert.Equal(ModelValidationState.Invalid, dictionary["ProductName"].ValidationState);
         }
 
@@ -1056,9 +1270,9 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
 
             // Assert
             Assert.Equal(ModelValidationState.Valid, dictionary["Product"].ValidationState);
-            Assert.Equal(0, dictionary["Product.Detail1"].Errors.Count);
+            Assert.Empty(dictionary["Product.Detail1"].Errors);
             Assert.Equal(ModelValidationState.Unvalidated, dictionary["Product.Detail1"].ValidationState);
-            Assert.Equal(0, dictionary["Product.Detail1.Name"].Errors.Count);
+            Assert.Empty(dictionary["Product.Detail1.Name"].Errors);
             Assert.Equal(ModelValidationState.Unvalidated, dictionary["Product.Detail1.Name"].ValidationState);
             Assert.Equal(ModelValidationState.Skipped, dictionary["Product.Detail1Name"].ValidationState);
         }
@@ -1079,13 +1293,13 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             dictionary.ClearValidationState(modelKey);
 
             // Assert
-            Assert.Equal(0, dictionary["Property1"].Errors.Count);
+            Assert.Empty(dictionary["Property1"].Errors);
             Assert.Equal(ModelValidationState.Unvalidated, dictionary["Property1"].ValidationState);
-            Assert.Equal(0, dictionary["Property2"].Errors.Count);
+            Assert.Empty(dictionary["Property2"].Errors);
             Assert.Equal(ModelValidationState.Unvalidated, dictionary["Property2"].ValidationState);
-            Assert.Equal(0, dictionary["Property3"].Errors.Count);
+            Assert.Empty(dictionary["Property3"].Errors);
             Assert.Equal(ModelValidationState.Unvalidated, dictionary["Property3"].ValidationState);
-            Assert.Equal(0, dictionary["Property4"].Errors.Count);
+            Assert.Empty(dictionary["Property4"].Errors);
             Assert.Equal(ModelValidationState.Unvalidated, dictionary["Property4"].ValidationState);
         }
 
@@ -1303,5 +1517,20 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             // Assert
             Assert.Equal("value1", property.RawValue);
         }
+
+        private class OptionsAccessor : IOptions<MvcOptions>
+        {
+            public MvcOptions Value { get; } = new MvcOptions();
+        }
+    }
+
+    internal class TestException : Exception
+    {
+        public TestException()
+        {
+            Message = "This is a test exception";
+        }
+
+        public override string Message { get; }
     }
 }

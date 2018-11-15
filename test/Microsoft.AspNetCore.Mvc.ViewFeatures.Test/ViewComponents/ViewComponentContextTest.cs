@@ -9,7 +9,6 @@ using Microsoft.AspNetCore.Mvc.Abstractions;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.AspNetCore.Mvc.Rendering;
 using Microsoft.AspNetCore.Mvc.ViewFeatures;
-using Microsoft.AspNetCore.Mvc.ViewFeatures.Internal;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.WebEncoders.Testing;
 using Xunit;
@@ -25,11 +24,12 @@ namespace Microsoft.AspNetCore.Mvc.ViewComponents
             var httpContext = new DefaultHttpContext();
             var actionContext = new ActionContext(httpContext, new RouteData(), new ActionDescriptor());
             var viewData = new ViewDataDictionary(new EmptyModelMetadataProvider());
+            var tempData = new TempDataDictionary(httpContext, new SessionStateTempDataProvider());
             var viewContext = new ViewContext(
                 actionContext,
                 NullView.Instance,
                 viewData,
-                new TempDataDictionary(httpContext, new SessionStateTempDataProvider()),
+                tempData,
                 TextWriter.Null,
                 new HtmlHelperOptions());
 
@@ -46,11 +46,13 @@ namespace Microsoft.AspNetCore.Mvc.ViewComponents
             // Assert
             // New ViewContext but initial View and TextWriter copied over.
             Assert.NotSame(viewContext, viewComponentContext.ViewContext);
+            Assert.Same(tempData, viewComponentContext.TempData);
             Assert.Same(viewContext.View, viewComponentContext.ViewContext.View);
             Assert.Same(viewContext.Writer, viewComponentContext.ViewContext.Writer);
 
             // Double-check the convenience properties.
             Assert.Same(viewComponentContext.ViewContext.ViewData, viewComponentContext.ViewData);
+            Assert.Same(viewComponentContext.ViewContext.TempData, viewComponentContext.TempData);
             Assert.Same(viewComponentContext.ViewContext.Writer, viewComponentContext.Writer);
 
             // New VDD instance but initial ModelMetadata copied over.

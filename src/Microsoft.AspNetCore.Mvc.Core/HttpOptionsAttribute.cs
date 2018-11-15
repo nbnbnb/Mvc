@@ -8,11 +8,11 @@ using Microsoft.AspNetCore.Mvc.Routing;
 namespace Microsoft.AspNetCore.Mvc
 {
     /// <summary>
-    /// Identifies an action that only supports the HTTP OPTIONS method.
+    /// Identifies an action that supports the HTTP OPTIONS method.
     /// </summary>
     public class HttpOptionsAttribute : HttpMethodAttribute
     {
-        private static readonly IEnumerable<string> _supportedMethods = new string[] { "OPTIONS" };
+        private static readonly IEnumerable<string> _supportedMethods = new [] { "OPTIONS" };
 
         /// <summary>
         /// Creates a new <see cref="HttpOptionsAttribute"/>.

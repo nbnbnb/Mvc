@@ -1,8 +1,9 @@
-// Copyright (c) .NET Foundation. All rights reserved.
+﻿// Copyright (c) .NET Foundation. All rights reserved.
 // Licensed under the Apache License, Version 2.0. See License.txt in the project root for license information.
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
 using Microsoft.AspNetCore.Hosting;
@@ -12,24 +13,27 @@ using Microsoft.AspNetCore.Mvc.ApiExplorer;
 using Microsoft.AspNetCore.Mvc.ApplicationModels;
 using Microsoft.AspNetCore.Mvc.ApplicationParts;
 using Microsoft.AspNetCore.Mvc.Controllers;
-using Microsoft.AspNetCore.Mvc.Cors.Internal;
-using Microsoft.AspNetCore.Mvc.DataAnnotations.Internal;
+using Microsoft.AspNetCore.Mvc.Cors;
 using Microsoft.AspNetCore.Mvc.Filters;
-using Microsoft.AspNetCore.Mvc.Formatters.Json.Internal;
-using Microsoft.AspNetCore.Mvc.Internal;
+using Microsoft.AspNetCore.Mvc.Formatters.Json;
+using Microsoft.AspNetCore.Mvc.Infrastructure;
 using Microsoft.AspNetCore.Mvc.Razor;
 using Microsoft.AspNetCore.Mvc.Razor.Compilation;
-using Microsoft.AspNetCore.Mvc.Razor.Internal;
 using Microsoft.AspNetCore.Mvc.Razor.TagHelpers;
+using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.AspNetCore.Mvc.RazorPages.Infrastructure;
 using Microsoft.AspNetCore.Mvc.TagHelpers;
 using Microsoft.AspNetCore.Mvc.ViewComponents;
 using Microsoft.AspNetCore.Mvc.ViewFeatures;
-using Microsoft.AspNetCore.Mvc.ViewFeatures.Internal;
+using Microsoft.AspNetCore.Mvc.ViewFeatures.Filters;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.ObjectPool;
 using Microsoft.Extensions.Options;
 using Moq;
+using Newtonsoft.Json.Serialization;
 using Xunit;
 
 namespace Microsoft.AspNetCore.Mvc
@@ -49,8 +53,8 @@ namespace Microsoft.AspNetCore.Mvc
             var services = new ServiceCollection();
             services.AddSingleton<IHostingEnvironment>(GetHostingEnvironment());
 
-            // Register a mock implementation of each service, AddMvcServices should add another implemenetation.
-            foreach (var serviceType in MutliRegistrationServiceTypes)
+            // Register a mock implementation of each service, AddMvcServices should add another implementation.
+            foreach (var serviceType in MultiRegistrationServiceTypes)
             {
                 var mockType = typeof(Mock<>).MakeGenericType(serviceType.Key);
                 services.Add(ServiceDescriptor.Transient(serviceType.Key, mockType));
@@ -60,7 +64,7 @@ namespace Microsoft.AspNetCore.Mvc
             services.AddMvc();
 
             // Assert
-            foreach (var serviceType in MutliRegistrationServiceTypes)
+            foreach (var serviceType in MultiRegistrationServiceTypes)
             {
                 AssertServiceCountEquals(services, serviceType.Key, serviceType.Value.Length + 1);
 
@@ -155,7 +159,7 @@ namespace Microsoft.AspNetCore.Mvc
         }
 
         [Fact]
-        public void AddMvcTwice_DoesNotAddDuplicateFramewokrParts()
+        public void AddMvcTwice_DoesNotAddDuplicateFrameworkParts()
         {
             // Arrange
             var mvcRazorAssembly = typeof(UrlResolutionTagHelper).GetTypeInfo().Assembly;
@@ -206,8 +210,14 @@ namespace Microsoft.AspNetCore.Mvc
             Assert.Collection(manager.FeatureProviders,
                 feature => Assert.IsType<ControllerFeatureProvider>(feature),
                 feature => Assert.IsType<ViewComponentFeatureProvider>(feature),
+#pragma warning disable CS0618 // Type or member is obsolete
+                feature => Assert.IsType<MetadataReferenceFeatureProvider>(feature),
+#pragma warning restore CS0618 // Type or member is obsolete
                 feature => Assert.IsType<TagHelperFeatureProvider>(feature),
-                feature => Assert.IsType<MetadataReferenceFeatureProvider>(feature));
+                feature => Assert.IsType<RazorCompiledItemFeatureProvider>(feature),
+#pragma warning disable CS0618 // Type or member is obsolete
+                feature => Assert.IsType<ViewsFeatureProvider>(feature));
+#pragma warning restore CS0618 // Type or member is obsolete
         }
 
         [Fact]
@@ -226,6 +236,81 @@ namespace Microsoft.AspNetCore.Mvc
             Assert.Same(manager, descriptor.ImplementationInstance);
         }
 
+        [Fact]
+        public void AddMvcCore_AddsMvcJsonOption()
+        {
+            // Arrange
+            var services = new ServiceCollection();
+
+            // Act
+            services.AddMvcCore()
+                .AddJsonOptions((options) =>
+                {
+                    options.SerializerSettings.ContractResolver = new CamelCasePropertyNamesContractResolver();
+                });
+
+            // Assert
+            Assert.Single(services, d => d.ServiceType == typeof(IConfigureOptions<MvcJsonOptions>));
+        }
+
+        [Fact]
+        public void AddMvc_NoScopedServiceIsReferredToByASingleton()
+        {
+            // Arrange
+            var services = new ServiceCollection();
+
+            services.AddSingleton<IHostingEnvironment>(GetHostingEnvironment());
+            services.AddSingleton<ObjectPoolProvider, DefaultObjectPoolProvider>();
+            services.AddSingleton<DiagnosticSource>(new DiagnosticListener("Microsoft.AspNet"));
+            services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
+            services.AddLogging();
+            services.AddOptions();
+            services.AddMvc();
+
+            var root = services.BuildServiceProvider(validateScopes: true);
+
+            var scopeFactory = root.GetRequiredService<IServiceScopeFactory>();
+
+            // Act & Assert
+            using (var scope = scopeFactory.CreateScope())
+            {
+                foreach (var serviceType in services.Select(d => d.ServiceType).Where(t => !t.GetTypeInfo().IsGenericTypeDefinition).Distinct())
+                {
+                    // This will throw if something is invalid.
+                    scope.ServiceProvider.GetService(typeof(IEnumerable<>).MakeGenericType(serviceType));
+                }
+            }
+        }
+
+        [Fact]
+        public void AddMvc_RegistersExpectedTempDataProvider()
+        {
+            // Arrange
+            var services = new ServiceCollection();
+
+            // Act
+            services.AddMvc();
+
+            // Assert
+            var descriptor = Assert.Single(services, item => item.ServiceType == typeof(ITempDataProvider));
+            Assert.Equal(typeof(CookieTempDataProvider), descriptor.ImplementationType);
+        }
+
+        [Fact]
+        public void AddMvc_DoesNotRegisterCookieTempDataOptionsConfiguration()
+        {
+            // Arrange
+            var services = new ServiceCollection();
+
+            // Act
+            var builder = services.AddMvc();
+
+            // Assert
+            Assert.DoesNotContain(
+                services,
+                item => item.ServiceType == typeof(IConfigureOptions<CookieTempDataProviderOptions>));
+        }
+
         private IEnumerable<Type> SingleRegistrationServiceTypes
         {
             get
@@ -234,7 +319,7 @@ namespace Microsoft.AspNetCore.Mvc
                 services.AddSingleton<IHostingEnvironment>(GetHostingEnvironment());
                 services.AddMvc();
 
-                var multiRegistrationServiceTypes = MutliRegistrationServiceTypes;
+                var multiRegistrationServiceTypes = MultiRegistrationServiceTypes;
                 return services
                     .Where(sd => !multiRegistrationServiceTypes.Keys.Contains(sd.ServiceType))
                     .Where(sd => sd.ServiceType.GetTypeInfo().Assembly.FullName.Contains("Mvc"))
@@ -242,7 +327,7 @@ namespace Microsoft.AspNetCore.Mvc
             }
         }
 
-        private Dictionary<Type, Type[]> MutliRegistrationServiceTypes
+        private Dictionary<Type, Type[]> MultiRegistrationServiceTypes
         {
             get
             {
@@ -263,6 +348,14 @@ namespace Microsoft.AspNetCore.Mvc
                         new Type[]
                         {
                             typeof(MvcCoreRouteOptionsSetup),
+                            typeof(MvcCoreRouteOptionsSetup),
+                        }
+                    },
+                    {
+                        typeof(IConfigureOptions<ApiBehaviorOptions>),
+                        new Type[]
+                        {
+                            typeof(ApiBehaviorOptionsSetup),
                         }
                     },
                     {
@@ -278,7 +371,29 @@ namespace Microsoft.AspNetCore.Mvc
                         new[]
                         {
                             typeof(RazorViewEngineOptionsSetup),
-                            typeof(DependencyContextRazorViewEngineOptionsSetup)
+                            typeof(RazorPagesRazorViewEngineOptionsSetup),
+                        }
+                    },
+                    {
+                        typeof(IPostConfigureOptions<MvcOptions>),
+                        new[]
+                        {
+                            typeof(MvcOptionsConfigureCompatibilityOptions),
+                            typeof(MvcCoreMvcOptionsSetup),
+                        }
+                    },
+                    {
+                        typeof(IPostConfigureOptions<RazorPagesOptions>),
+                        new[]
+                        {
+                            typeof(RazorPagesOptionsConfigureCompatibilityOptions),
+                        }
+                    },
+                    {
+                        typeof(IPostConfigureOptions<MvcJsonOptions>),
+                        new[]
+                        {
+                            typeof(MvcJsonOptionsConfigureCompatibilityOptions),
                         }
                     },
                     {
@@ -293,6 +408,7 @@ namespace Microsoft.AspNetCore.Mvc
                         new Type[]
                         {
                             typeof(ControllerActionDescriptorProvider),
+                            typeof(PageActionDescriptorProvider),
                         }
                     },
                     {
@@ -300,6 +416,7 @@ namespace Microsoft.AspNetCore.Mvc
                         new Type[]
                         {
                             typeof(ControllerActionInvokerProvider),
+                            typeof(PageActionInvokerProvider),
                         }
                     },
                     {
@@ -324,6 +441,9 @@ namespace Microsoft.AspNetCore.Mvc
                             typeof(DefaultApplicationModelProvider),
                             typeof(CorsApplicationModelProvider),
                             typeof(AuthorizationApplicationModelProvider),
+                            typeof(TempDataApplicationModelProvider),
+                            typeof(ViewDataAttributeApplicationModelProvider),
+                            typeof(ApiBehaviorApplicationModelProvider),
                         }
                     },
                     {
@@ -331,6 +451,27 @@ namespace Microsoft.AspNetCore.Mvc
                         new Type[]
                         {
                             typeof(DefaultApiDescriptionProvider),
+                            typeof(JsonPatchOperationsArrayProvider),
+                        }
+                    },
+                    {
+                        typeof(IPageRouteModelProvider),
+                        new[]
+                        {
+                            typeof(CompiledPageRouteModelProvider),
+                            typeof(RazorProjectPageRouteModelProvider),
+                        }
+                    },
+                    {
+                        typeof(IPageApplicationModelProvider),
+                        new[]
+                        {
+                            typeof(AuthorizationPageApplicationModelProvider),
+                            typeof(AuthorizationPageApplicationModelProvider),
+                            typeof(DefaultPageApplicationModelProvider),
+                            typeof(TempDataFilterPageApplicationModelProvider),
+                            typeof(ViewDataAttributePageApplicationModelProvider),
+                            typeof(ResponseCacheFilterApplicationModelProvider),
                         }
                     },
                 };

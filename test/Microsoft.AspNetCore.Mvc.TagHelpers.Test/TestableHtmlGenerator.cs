@@ -8,8 +8,8 @@ using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Html;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Abstractions;
-using Microsoft.AspNetCore.Mvc.Internal;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
+using Microsoft.AspNetCore.Mvc.ModelBinding.Validation;
 using Microsoft.AspNetCore.Mvc.Rendering;
 using Microsoft.AspNetCore.Mvc.Routing;
 using Microsoft.AspNetCore.Mvc.ViewEngines;
@@ -50,7 +50,7 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
                   metadataProvider,
                   CreateUrlHelperFactory(urlHelper),
                   new HtmlTestEncoder(),
-                  new ClientValidatorCache())
+                  new DefaultValidationHtmlAttributeProvider(options, metadataProvider, new ClientValidatorCache()))
         {
             _validationAttributes = validationAttributes;
         }
@@ -65,8 +65,21 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
             IHtmlGenerator htmlGenerator,
             IModelMetadataProvider metadataProvider)
         {
-            var actionContext = new ActionContext(new DefaultHttpContext(), new RouteData(), new ActionDescriptor());
-            var viewData = new ViewDataDictionary(metadataProvider)
+            return GetViewContext(model, htmlGenerator, metadataProvider, modelState: new ModelStateDictionary());
+        }
+
+        public static ViewContext GetViewContext(
+            object model,
+            IHtmlGenerator htmlGenerator,
+            IModelMetadataProvider metadataProvider,
+            ModelStateDictionary modelState)
+        {
+            var actionContext = new ActionContext(
+                new DefaultHttpContext(),
+                new RouteData(),
+                new ActionDescriptor(),
+                modelState);
+            var viewData = new ViewDataDictionary(metadataProvider, modelState)
             {
                 Model = model,
             };

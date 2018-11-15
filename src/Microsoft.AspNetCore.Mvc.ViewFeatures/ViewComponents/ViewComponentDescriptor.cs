@@ -2,6 +2,7 @@
 // Licensed under the Apache License, Version 2.0. See License.txt in the project root for license information.
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Reflection;
 
@@ -55,7 +56,7 @@ namespace Microsoft.AspNetCore.Mvc.ViewComponents
         /// <remarks>
         /// <para>
         /// The full name is defaulted to the full namespace of the view component class, prepended to
-        /// the the class name with a '.' character as the separator. If the view component class uses
+        /// the class name with a '.' character as the separator. If the view component class uses
         /// <code>ViewComponent</code> as a suffix, the suffix will be omitted from the <see cref="FullName"/>.
         /// </para>
         /// <example>
@@ -124,5 +125,10 @@ namespace Microsoft.AspNetCore.Mvc.ViewComponents
         /// Gets or sets the <see cref="System.Reflection.MethodInfo"/> to invoke.
         /// </summary>
         public MethodInfo MethodInfo { get; set; }
+
+        /// <summary>
+        /// Gets or sets the parameters associated with the method described by <see cref="MethodInfo"/>.
+        /// </summary>
+        public IReadOnlyList<ParameterInfo> Parameters { get; set; }
     }
 }

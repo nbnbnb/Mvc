@@ -6,7 +6,6 @@ using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Linq.Expressions;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
-using Microsoft.AspNetCore.Mvc.TestCommon;
 using Microsoft.AspNetCore.Mvc.ViewFeatures;
 using Microsoft.AspNetCore.Testing;
 using Xunit;
@@ -15,19 +14,36 @@ namespace Microsoft.AspNetCore.Mvc.Rendering
 {
     public class HtmlHelperHiddenTest
     {
-        public static IEnumerable<object[]> HiddenWithAttributesData
+        public static TheoryData<object, string> HiddenWithAttributesData
         {
             get
             {
-                var expected1 = @"<input baz=""HtmlEncode[[BazValue]]"" id=""HtmlEncode[[Property1]]"" name=""HtmlEncode[[Property1]]"" type=""HtmlEncode[[hidden]]"" " +
-                                @"value=""HtmlEncode[[ModelStateValue]]"" />";
-                yield return new object[] { new Dictionary<string, object> { { "baz", "BazValue" } }, expected1 };
-                yield return new object[] { new { baz = "BazValue" }, expected1 };
+                var expected1 = @"<input baz=""HtmlEncode[[BazValue]]"" id=""HtmlEncode[[Property1]]"" " +
+                    @"name=""HtmlEncode[[Property1]]"" type=""HtmlEncode[[hidden]]"" " +
+                    @"value=""HtmlEncode[[ModelStateValue]]"" />";
+                var expected2 = @"<input foo-baz=""HtmlEncode[[BazValue]]"" id=""HtmlEncode[[Property1]]"" " +
+                    @"name=""HtmlEncode[[Property1]]"" type=""HtmlEncode[[hidden]]"" " +
+                    @"value=""HtmlEncode[[ModelStateValue]]"" />";
+                var htmlAttributes1 = new Dictionary<string, object>
+                {
+                    { "baz", "BazValue" },
+                    { "name", "-expression-" }, // overridden
+                };
+                var htmlAttributes2 = new
+                {
+                    baz = "BazValue",
+                    name = "-expression-", // overridden
+                };
 
-                var expected2 = @"<input foo-baz=""HtmlEncode[[BazValue]]"" id=""HtmlEncode[[Property1]]"" name=""HtmlEncode[[Property1]]"" type=""HtmlEncode[[hidden]]"" " +
-                                @"value=""HtmlEncode[[ModelStateValue]]"" />";
-                yield return new object[] { new Dictionary<string, object> { { "foo-baz", "BazValue" } }, expected2 };
-                yield return new object[] { new { foo_baz = "BazValue" }, expected2 };
+                var data = new TheoryData<object, string>
+                {
+                    { htmlAttributes1, expected1 },
+                    { htmlAttributes2, expected1 },
+                    { new Dictionary<string, object> { { "foo-baz", "BazValue" } }, expected2 },
+                    { new { foo_baz = "BazValue" }, expected2 }
+                };
+
+                return data;
             }
         }
 
@@ -151,7 +167,7 @@ namespace Microsoft.AspNetCore.Mvc.Rendering
         {
             // Arrange
             var expected = @"<input id=""HtmlEncode[[Property1]]"" key=""HtmlEncode[[value]]"" name=""HtmlEncode[[Property1]]"" type=""HtmlEncode[[hidden]]"" " +
-                           @"value=""HtmlEncode[[test]]"" />";
+                @"value=""HtmlEncode[[test]]"" />";
             var attributes = new { key = "value" };
             var helper = DefaultTemplatesUtilities.GetHtmlHelper(GetViewDataWithNullModelAndNonNullViewData());
 
@@ -167,7 +183,7 @@ namespace Microsoft.AspNetCore.Mvc.Rendering
         {
             // Arrange
             var expected = @"<input data-key=""HtmlEncode[[value]]"" id=""HtmlEncode[[Property1]]"" name=""HtmlEncode[[Property1]]"" type=""HtmlEncode[[hidden]]"" " +
-                           @"value=""HtmlEncode[[test]]"" />";
+                @"value=""HtmlEncode[[test]]"" />";
             var attributes = new Dictionary<string, object> { { "data-key", "value" } };
             var helper = DefaultTemplatesUtilities.GetHtmlHelper(GetViewDataWithNullModelAndNonNullViewData());
 
@@ -292,7 +308,7 @@ namespace Microsoft.AspNetCore.Mvc.Rendering
         {
             // Arrange
             var expected = @"<input baz=""HtmlEncode[[BazValue]]"" id=""HtmlEncode[[keyNotFound]]"" name=""HtmlEncode[[keyNotFound]]"" type=""HtmlEncode[[hidden]]"" " +
-                           @"value="""" />";
+                @"value="""" />";
             var helper = DefaultTemplatesUtilities.GetHtmlHelper(GetViewDataWithModelStateAndModelAndViewDataValues());
             var attributes = new Dictionary<string, object> { { "baz", "BazValue" } };
 
@@ -408,21 +424,40 @@ namespace Microsoft.AspNetCore.Mvc.Rendering
         public void HiddenWithEmptyNameAndPrefixThrows()
         {
             // Arrange
-            var helper = DefaultTemplatesUtilities.GetHtmlHelper(GetViewDataWithModelStateAndModelAndViewDataValues());
+            var helper = DefaultTemplatesUtilities.GetHtmlHelper("model-value");
             var attributes = new Dictionary<string, object>
             {
                 { "class", "some-class"}
             };
             var expected = "The name of an HTML field cannot be null or empty. Instead use methods " +
                 "Microsoft.AspNetCore.Mvc.Rendering.IHtmlHelper.Editor or Microsoft.AspNetCore.Mvc.Rendering." +
-                "IHtmlHelper`1.EditorFor with a non-empty htmlFieldName argument value." +
-                Environment.NewLine + "Parameter name: expression";
+                "IHtmlHelper`1.EditorFor with a non-empty htmlFieldName argument value.";
 
             // Act and Assert
             ExceptionAssert.ThrowsArgument(
-                () => helper.Hidden(string.Empty, string.Empty, attributes),
+                () => helper.Hidden(expression: string.Empty, value: null, htmlAttributes: attributes),
                 "expression",
                 expected);
+        }
+
+        [Fact]
+        public void HiddenWithEmptyNameAndPrefix_DoesNotThrow_WithNameAttribute()
+        {
+            // Arrange
+            var expected = @"<input class=""HtmlEncode[[some-class]]"" name=""HtmlEncode[[-expression-]]"" " +
+                @"type=""HtmlEncode[[hidden]]"" value=""HtmlEncode[[model-value]]"" />";
+            var helper = DefaultTemplatesUtilities.GetHtmlHelper("model-value");
+            var attributes = new Dictionary<string, object>
+            {
+                { "class", "some-class"},
+                { "name", "-expression-" },
+            };
+
+            // Act
+            var result = helper.Hidden(expression: string.Empty, value: null, htmlAttributes: attributes);
+
+            // Assert
+            Assert.Equal(expected, HtmlContentUtilities.HtmlContentToString(result));
         }
 
         [Fact]
@@ -449,10 +484,10 @@ namespace Microsoft.AspNetCore.Mvc.Rendering
         public void HiddenGeneratesUnobtrusiveValidation()
         {
             // Arrange
-            // Mono issue - https://github.com/aspnet/External/issues/19
-            var expected = PlatformNormalizer.NormalizeContent(
-                @"<input data-val=""HtmlEncode[[true]]"" data-val-required=""HtmlEncode[[The Property2 field is required.]]"" " +
-                @"id=""HtmlEncode[[Property2]]"" name=""HtmlEncode[[Property2]]"" type=""HtmlEncode[[hidden]]"" value="""" />");
+            var requiredMessage = new RequiredAttribute().FormatErrorMessage("Property2");
+            var expected =
+                $@"<input data-val=""HtmlEncode[[true]]"" data-val-required=""HtmlEncode[[{requiredMessage}]]"" " +
+                @"id=""HtmlEncode[[Property2]]"" name=""HtmlEncode[[Property2]]"" type=""HtmlEncode[[hidden]]"" value="""" />";
             var helper = DefaultTemplatesUtilities.GetHtmlHelper(GetViewDataWithModelStateAndModelAndViewDataValues());
 
             // Act
@@ -713,10 +748,10 @@ namespace Microsoft.AspNetCore.Mvc.Rendering
         public void HiddenFor_GeneratesUnobtrusiveValidationAttributes()
         {
             // Arrange
-            // Mono issue - https://github.com/aspnet/External/issues/19
-            var expected = PlatformNormalizer.NormalizeContent(
-                @"<input data-val=""HtmlEncode[[true]]"" data-val-required=""HtmlEncode[[The Property2 field is required.]]"" " +
-                @"id=""HtmlEncode[[Property2]]"" name=""HtmlEncode[[Property2]]"" type=""HtmlEncode[[hidden]]"" value="""" />");
+            var requiredMessage = ValidationAttributeUtil.GetRequiredErrorMessage("Property2");
+            var expected =
+                $@"<input data-val=""HtmlEncode[[true]]"" data-val-required=""HtmlEncode[[{requiredMessage}]]"" " +
+                @"id=""HtmlEncode[[Property2]]"" name=""HtmlEncode[[Property2]]"" type=""HtmlEncode[[hidden]]"" value="""" />";
             var helper = DefaultTemplatesUtilities.GetHtmlHelper(GetViewDataWithErrors());
 
             // Act

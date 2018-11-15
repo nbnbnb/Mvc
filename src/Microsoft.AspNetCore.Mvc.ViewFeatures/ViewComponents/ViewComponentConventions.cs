@@ -8,7 +8,7 @@ namespace Microsoft.AspNetCore.Mvc.ViewComponents
 {
     public static class ViewComponentConventions
     {
-        private const string ViewComponentSuffix = "ViewComponent";
+        public static readonly string ViewComponentSuffix = "ViewComponent";
 
         public static string GetComponentName(TypeInfo componentType)
         {
@@ -82,7 +82,8 @@ namespace Microsoft.AspNetCore.Mvc.ViewComponents
             if (!typeInfo.IsClass ||
                 !typeInfo.IsPublic ||
                 typeInfo.IsAbstract ||
-                typeInfo.ContainsGenericParameters)
+                typeInfo.ContainsGenericParameters ||
+                typeInfo.IsDefined(typeof(NonViewComponentAttribute)))
             {
                 return false;
             }

@@ -3,14 +3,13 @@
 
 using System;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Http.Authentication;
 using Microsoft.AspNetCore.Mvc.Abstractions;
-using Microsoft.AspNetCore.Mvc.Internal;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Testing;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
 
@@ -19,17 +18,16 @@ namespace Microsoft.AspNetCore.Mvc
     public class ForbidResultTest
     {
         [Fact]
-        public async Task ExecuteResultAsync_InvokesForbidAsyncOnAuthenticationManager()
+        public async Task ExecuteResultAsync_InvokesForbidAsyncOnAuthenticationService()
         {
             // Arrange
-            var authenticationManager = new Mock<AuthenticationManager>();
-            authenticationManager
-                .Setup(c => c.ForbidAsync("", null))
-                .Returns(TaskCache.CompletedTask)
-                .Verifiable();
             var httpContext = new Mock<HttpContext>();
-            httpContext.Setup(c => c.RequestServices).Returns(CreateServices());
-            httpContext.Setup(c => c.Authentication).Returns(authenticationManager.Object);
+            var auth = new Mock<IAuthenticationService>();
+            auth
+                .Setup(c => c.ForbidAsync(httpContext.Object, "", null))
+                .Returns(Task.CompletedTask)
+                .Verifiable();
+            httpContext.Setup(c => c.RequestServices).Returns(CreateServices(auth.Object));
             var result = new ForbidResult("", null);
             var routeData = new RouteData();
 
@@ -42,26 +40,25 @@ namespace Microsoft.AspNetCore.Mvc
             await result.ExecuteResultAsync(actionContext);
 
             // Assert
-            authenticationManager.Verify();
+            auth.Verify();
         }
 
         [Fact]
         public async Task ExecuteResultAsync_InvokesForbidAsyncOnAllConfiguredSchemes()
         {
             // Arrange
-            var authProperties = new AuthenticationProperties();
-            var authenticationManager = new Mock<AuthenticationManager>();
-            authenticationManager
-                .Setup(c => c.ForbidAsync("Scheme1", authProperties))
-                .Returns(TaskCache.CompletedTask)
-                .Verifiable();
-            authenticationManager
-                .Setup(c => c.ForbidAsync("Scheme2", authProperties))
-                .Returns(TaskCache.CompletedTask)
-                .Verifiable();
             var httpContext = new Mock<HttpContext>();
-            httpContext.Setup(c => c.RequestServices).Returns(CreateServices());
-            httpContext.Setup(c => c.Authentication).Returns(authenticationManager.Object);
+            var authProperties = new AuthenticationProperties();
+            var auth = new Mock<IAuthenticationService>();
+            auth
+                .Setup(c => c.ForbidAsync(httpContext.Object, "Scheme1", authProperties))
+                .Returns(Task.CompletedTask)
+                .Verifiable();
+            auth
+                .Setup(c => c.ForbidAsync(httpContext.Object, "Scheme2", authProperties))
+                .Returns(Task.CompletedTask)
+                .Verifiable();
+            httpContext.Setup(c => c.RequestServices).Returns(CreateServices(auth.Object));
             var result = new ForbidResult(new[] { "Scheme1", "Scheme2" }, authProperties);
             var routeData = new RouteData();
 
@@ -74,7 +71,7 @@ namespace Microsoft.AspNetCore.Mvc
             await result.ExecuteResultAsync(actionContext);
 
             // Assert
-            authenticationManager.Verify();
+            auth.Verify();
         }
 
         public static TheoryData ExecuteResultAsync_InvokesForbidAsyncWithAuthPropertiesData =>
@@ -89,14 +86,13 @@ namespace Microsoft.AspNetCore.Mvc
         public async Task ExecuteResultAsync_InvokesForbidAsyncWithAuthProperties(AuthenticationProperties expected)
         {
             // Arrange
-            var authenticationManager = new Mock<AuthenticationManager>();
-            authenticationManager
-                .Setup(c => c.ForbidAsync(expected))
-                .Returns(TaskCache.CompletedTask)
-                .Verifiable();
             var httpContext = new Mock<HttpContext>();
-            httpContext.Setup(c => c.RequestServices).Returns(CreateServices());
-            httpContext.Setup(c => c.Authentication).Returns(authenticationManager.Object);
+            var auth = new Mock<IAuthenticationService>();
+            auth
+                .Setup(c => c.ForbidAsync(httpContext.Object, null, expected))
+                .Returns(Task.CompletedTask)
+                .Verifiable();
+            httpContext.Setup(c => c.RequestServices).Returns(CreateServices(auth.Object));
             var result = new ForbidResult(expected);
             var routeData = new RouteData();
 
@@ -109,7 +105,7 @@ namespace Microsoft.AspNetCore.Mvc
             await result.ExecuteResultAsync(actionContext);
 
             // Assert
-            authenticationManager.Verify();
+            auth.Verify();
         }
 
         [Theory]
@@ -118,14 +114,13 @@ namespace Microsoft.AspNetCore.Mvc
             AuthenticationProperties expected)
         {
             // Arrange
-            var authenticationManager = new Mock<AuthenticationManager>();
-            authenticationManager
-                .Setup(c => c.ForbidAsync(expected))
-                .Returns(TaskCache.CompletedTask)
-                .Verifiable();
             var httpContext = new Mock<HttpContext>();
-            httpContext.Setup(c => c.RequestServices).Returns(CreateServices());
-            httpContext.Setup(c => c.Authentication).Returns(authenticationManager.Object);
+            var auth = new Mock<IAuthenticationService>();
+            auth
+                .Setup(c => c.ForbidAsync(httpContext.Object, null, expected))
+                .Returns(Task.CompletedTask)
+                .Verifiable();
+            httpContext.Setup(c => c.RequestServices).Returns(CreateServices(auth.Object));
             var result = new ForbidResult(expected)
             {
                 AuthenticationSchemes = new string[0]
@@ -141,13 +136,14 @@ namespace Microsoft.AspNetCore.Mvc
             await result.ExecuteResultAsync(actionContext);
 
             // Assert
-            authenticationManager.Verify();
+            auth.Verify();
         }
 
-        private static IServiceProvider CreateServices()
+        private static IServiceProvider CreateServices(IAuthenticationService auth)
         {
             return new ServiceCollection()
                 .AddSingleton<ILoggerFactory>(NullLoggerFactory.Instance)
+                .AddSingleton(auth)
                 .BuildServiceProvider();
         }
     }

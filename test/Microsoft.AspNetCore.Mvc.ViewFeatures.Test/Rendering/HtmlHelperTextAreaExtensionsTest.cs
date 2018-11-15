@@ -4,7 +4,6 @@
 using System;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.AspNetCore.Mvc.Rendering;
-using Microsoft.AspNetCore.Mvc.TestCommon;
 using Microsoft.AspNetCore.Mvc.ViewFeatures;
 using Xunit;
 
@@ -123,7 +122,7 @@ namespace Microsoft.AspNetCore.Mvc.Core
 
             // Assert
             Assert.Equal(
-                "<textarea attr=\"HtmlEncode[[value]]\" columns=\"HtmlEncode[[2]]\" id=\"HtmlEncode[[Property1]]\" " +
+                "<textarea attr=\"HtmlEncode[[value]]\" cols=\"HtmlEncode[[2]]\" id=\"HtmlEncode[[Property1]]\" " +
                 "name=\"HtmlEncode[[Property1]]\" rows=\"HtmlEncode[[1]]\">" + Environment.NewLine +
                 "HtmlEncode[[myvalue]]</textarea>",
                 HtmlContentUtilities.HtmlContentToString(textAreaResult));
@@ -140,7 +139,7 @@ namespace Microsoft.AspNetCore.Mvc.Core
 
             // Assert
             Assert.Equal(
-                "<textarea attr=\"HtmlEncode[[value]]\" columns=\"HtmlEncode[[2]]\" id=\"HtmlEncode[[Property1]]\" " +
+                "<textarea attr=\"HtmlEncode[[value]]\" cols=\"HtmlEncode[[2]]\" id=\"HtmlEncode[[Property1]]\" " +
                 "name=\"HtmlEncode[[Property1]]\" rows=\"HtmlEncode[[1]]\">" + Environment.NewLine +
                 "</textarea>",
                 HtmlContentUtilities.HtmlContentToString(textAreaForResult));

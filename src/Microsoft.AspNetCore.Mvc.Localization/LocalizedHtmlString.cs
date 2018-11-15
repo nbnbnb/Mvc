@@ -3,7 +3,6 @@
 
 using System;
 using System.IO;
-using System.Text;
 using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Html;
 
@@ -14,11 +13,6 @@ namespace Microsoft.AspNetCore.Mvc.Localization
     /// </summary>
     public class LocalizedHtmlString : IHtmlContent
     {
-#if NETSTANDARD1_4
-        private static readonly object[] EmptyArguments = Array.Empty<object>();
-#else
-        private static readonly object[] EmptyArguments = new object[0];
-#endif
         private readonly object[] _arguments;
 
         /// <summary>
@@ -27,7 +21,7 @@ namespace Microsoft.AspNetCore.Mvc.Localization
         /// <param name="name">The name of the string resource.</param>
         /// <param name="value">The string resource.</param>
         public LocalizedHtmlString(string name, string value)
-            : this(name, value, isResourceNotFound: false, arguments: EmptyArguments)
+            : this(name, value, isResourceNotFound: false, arguments: Array.Empty<object>())
         {
         }
 
@@ -38,7 +32,7 @@ namespace Microsoft.AspNetCore.Mvc.Localization
         /// <param name="value">The string resource.</param>
         /// <param name="isResourceNotFound">A flag that indicates if the resource is not found.</param>
         public LocalizedHtmlString(string name, string value, bool isResourceNotFound)
-            : this(name, value, isResourceNotFound, arguments: EmptyArguments)
+            : this(name, value, isResourceNotFound, arguments: Array.Empty<object>())
         {
         }
 
@@ -78,7 +72,7 @@ namespace Microsoft.AspNetCore.Mvc.Localization
         public string Name { get; }
 
         /// <summary>
-        /// The string resource.
+        /// The original resource string, prior to formatting with any constructor arguments.
         /// </summary>
         public string Value { get; }
 

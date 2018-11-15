@@ -3,10 +3,10 @@
 
 using System;
 using System.Collections.Generic;
-using System.Security.Cryptography;
+using System.Globalization;
 using System.Text;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc.TagHelpers.Internal;
+using Microsoft.AspNetCore.Mvc.Razor.Infrastructure;
 using Microsoft.AspNetCore.Razor.TagHelpers;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Internal;
@@ -21,10 +21,11 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers.Cache
     public class CacheTagKey : IEquatable<CacheTagKey>
     {
         private static readonly char[] AttributeSeparator = new[] { ',' };
-        private static readonly Func<IRequestCookieCollection, string, string> CookieAcccessor = (c, key) => c[key];
+        private static readonly Func<IRequestCookieCollection, string, string> CookieAccessor = (c, key) => c[key];
         private static readonly Func<IHeaderDictionary, string, string> HeaderAccessor = (c, key) => c[key];
         private static readonly Func<IQueryCollection, string, string> QueryAccessor = (c, key) => c[key];
-        private static readonly Func<RouteValueDictionary, string, string> RouteValueAccessor = (c, key) => c[key]?.ToString();
+        private static readonly Func<RouteValueDictionary, string, string> RouteValueAccessor = (c, key) =>
+            Convert.ToString(c[key], CultureInfo.InvariantCulture);
 
         private const string CacheKeyTokenSeparator = "||";
         private const string VaryByName = "VaryBy";
@@ -33,8 +34,8 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers.Cache
         private const string VaryByRouteName = "VaryByRoute";
         private const string VaryByCookieName = "VaryByCookie";
         private const string VaryByUserName = "VaryByUser";
+        private const string VaryByCulture = "VaryByCulture";
 
-        private readonly string _key;
         private readonly string _prefix;
         private readonly string _varyBy;
         private readonly DateTimeOffset? _expiresOn;
@@ -45,7 +46,10 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers.Cache
         private readonly IList<KeyValuePair<string, string>> _routeValues;
         private readonly IList<KeyValuePair<string, string>> _cookies;
         private readonly bool _varyByUser;
+        private readonly bool _varyByCulture;
         private readonly string _username;
+        private readonly CultureInfo _requestCulture;
+        private readonly CultureInfo _requestUICulture;
 
         private string _generatedKey;
         private int? _hashcode;
@@ -59,7 +63,7 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers.Cache
         public CacheTagKey(CacheTagHelper tagHelper, TagHelperContext context)
             : this(tagHelper)
         {
-            _key = context.UniqueId;
+            Key = context.UniqueId;
             _prefix = nameof(CacheTagHelper);
         }
 
@@ -71,7 +75,7 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers.Cache
         public CacheTagKey(DistributedCacheTagHelper tagHelper)
             : this((CacheTagHelperBase)tagHelper)
         {
-            _key = tagHelper.Name;
+            Key = tagHelper.Name;
             _prefix = nameof(DistributedCacheTagHelper);
         }
 
@@ -84,17 +88,30 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers.Cache
             _expiresOn = tagHelper.ExpiresOn;
             _expiresSliding = tagHelper.ExpiresSliding;
             _varyBy = tagHelper.VaryBy;
-            _cookies = ExtractCollection(tagHelper.VaryByCookie, request.Cookies, CookieAcccessor);
+            _cookies = ExtractCollection(tagHelper.VaryByCookie, request.Cookies, CookieAccessor);
             _headers = ExtractCollection(tagHelper.VaryByHeader, request.Headers, HeaderAccessor);
             _queries = ExtractCollection(tagHelper.VaryByQuery, request.Query, QueryAccessor);
-            _routeValues = ExtractCollection(tagHelper.VaryByRoute, tagHelper.ViewContext.RouteData.Values, RouteValueAccessor);
+            _routeValues = ExtractCollection(
+                tagHelper.VaryByRoute,
+                tagHelper.ViewContext.RouteData.Values,
+                RouteValueAccessor);
             _varyByUser = tagHelper.VaryByUser;
+            _varyByCulture = tagHelper.VaryByCulture;
 
             if (_varyByUser)
             {
                 _username = httpContext.User?.Identity?.Name;
             }
+
+            if (_varyByCulture)
+            {
+                _requestCulture = CultureInfo.CurrentCulture;
+                _requestUICulture = CultureInfo.CurrentUICulture;
+            }
         }
+
+        // Internal for unit testing.
+        internal string Key { get; }
 
         /// <summary>
         /// Creates a <see cref="string"/> representation of the key.
@@ -111,7 +128,7 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers.Cache
             var builder = new StringBuilder(_prefix);
             builder
                 .Append(CacheKeyTokenSeparator)
-                .Append(_key);
+                .Append(Key);
 
             if (!string.IsNullOrEmpty(_varyBy))
             {
@@ -134,6 +151,17 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers.Cache
                     .Append(VaryByUserName)
                     .Append(CacheKeyTokenSeparator)
                     .Append(_username);
+            }
+
+            if (_varyByCulture)
+            {
+                builder
+                    .Append(CacheKeyTokenSeparator)
+                    .Append(VaryByCulture)
+                    .Append(CacheKeyTokenSeparator)
+                    .Append(_requestCulture)
+                    .Append(CacheKeyTokenSeparator)
+                    .Append(_requestUICulture);
             }
 
             _generatedKey = builder.ToString();
@@ -163,19 +191,18 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers.Cache
         /// <inheritdoc />
         public override bool Equals(object obj)
         {
-            var other = obj as CacheTagKey;
-            if (other == null)
+            if (obj is CacheTagKey other)
             {
-                return false;
+                return Equals(other);
             }
 
-            return Equals(other);
+            return false;
         }
 
         /// <inheritdoc />
         public bool Equals(CacheTagKey other)
         {
-            return string.Equals(other._key, _key, StringComparison.Ordinal) &&
+            return string.Equals(other.Key, Key, StringComparison.Ordinal) &&
                 other._expiresAfter == _expiresAfter &&
                 other._expiresOn == _expiresOn &&
                 other._expiresSliding == _expiresSliding &&
@@ -184,8 +211,26 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers.Cache
                 AreSame(_headers, other._headers) &&
                 AreSame(_queries, other._queries) &&
                 AreSame(_routeValues, other._routeValues) &&
-                _varyByUser == other._varyByUser &&
-                (!_varyByUser || string.Equals(other._username, _username, StringComparison.Ordinal));
+                (_varyByUser == other._varyByUser &&
+                    (!_varyByUser || string.Equals(other._username, _username, StringComparison.Ordinal))) &&
+                CultureEquals();
+
+            bool CultureEquals()
+            {
+                if (_varyByCulture != other._varyByCulture)
+                {
+                    return false;
+                }
+
+                if (!_varyByCulture)
+                {
+                    // Neither has culture set.
+                    return true;
+                }
+
+                return _requestCulture.Equals(other._requestCulture) &&
+                    _requestUICulture.Equals(other._requestUICulture);
+            }
         }
 
         /// <inheritdoc />
@@ -204,12 +249,14 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers.Cache
 
             var hashCodeCombiner = new HashCodeCombiner();
 
-            hashCodeCombiner.Add(_key, StringComparer.Ordinal);
+            hashCodeCombiner.Add(Key, StringComparer.Ordinal);
             hashCodeCombiner.Add(_expiresAfter);
             hashCodeCombiner.Add(_expiresOn);
             hashCodeCombiner.Add(_expiresSliding);
             hashCodeCombiner.Add(_varyBy, StringComparer.Ordinal);
             hashCodeCombiner.Add(_username, StringComparer.Ordinal);
+            hashCodeCombiner.Add(_requestCulture);
+            hashCodeCombiner.Add(_requestUICulture);
 
             CombineCollectionHashCode(hashCodeCombiner, VaryByCookieName, _cookies);
             CombineCollectionHashCode(hashCodeCombiner, VaryByHeaderName, _headers);
@@ -221,7 +268,10 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers.Cache
             return _hashcode.Value;
         }
 
-        private static IList<KeyValuePair<string, string>> ExtractCollection<TSourceCollection>(string keys, TSourceCollection collection, Func<TSourceCollection, string, string> accessor)
+        private static IList<KeyValuePair<string, string>> ExtractCollection<TSourceCollection>(
+            string keys,
+            TSourceCollection collection,
+            Func<TSourceCollection, string, string> accessor)
         {
             if (string.IsNullOrEmpty(keys))
             {

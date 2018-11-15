@@ -24,7 +24,7 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
         public async Task BindProperty_WithData_WithPrefix_GetsBound()
         {
             // Arrange
-            var argumentBinder = ModelBindingTestHelper.GetArgumentBinder();
+            var parameterBinder = ModelBindingTestHelper.GetParameterBinder();
             var parameter = new ParameterDescriptor()
             {
                 Name = "Parameter1",
@@ -40,7 +40,7 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
             var modelState = testContext.ModelState;
 
             // Act
-            var modelBindingResult = await argumentBinder.BindModelAsync(parameter, testContext);
+            var modelBindingResult = await parameterBinder.BindModelAsync(parameter, testContext);
 
             // Assert
 
@@ -50,7 +50,9 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
             // Model
             var boundPerson = Assert.IsType<Person>(modelBindingResult.Model);
             Assert.NotNull(boundPerson);
-            Assert.NotNull(boundPerson.Token);
+            Assert.False(boundPerson.Token.IsCancellationRequested);
+            testContext.HttpContext.Abort();
+            Assert.True(boundPerson.Token.IsCancellationRequested);
 
             // ModelState
             Assert.True(modelState.IsValid);
@@ -62,7 +64,7 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
         public async Task BindProperty_WithData_WithEmptyPrefix_GetsBound()
         {
             // Arrange
-            var argumentBinder = ModelBindingTestHelper.GetArgumentBinder();
+            var parameterBinder = ModelBindingTestHelper.GetParameterBinder();
             var parameter = new ParameterDescriptor()
             {
                 Name = "Parameter1",
@@ -74,7 +76,7 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
             var modelState = testContext.ModelState;
 
             // Act
-            var modelBindingResult = await argumentBinder.BindModelAsync(parameter, testContext);
+            var modelBindingResult = await parameterBinder.BindModelAsync(parameter, testContext);
 
             // Assert
 
@@ -84,18 +86,20 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
             // Model
             var boundPerson = Assert.IsType<Person>(modelBindingResult.Model);
             Assert.NotNull(boundPerson);
-            Assert.NotNull(boundPerson.Token);
+            Assert.False(boundPerson.Token.IsCancellationRequested);
+            testContext.HttpContext.Abort();
+            Assert.True(boundPerson.Token.IsCancellationRequested);
 
             // ModelState
             Assert.True(modelState.IsValid);
-            Assert.Equal(0, modelState.Count);
+            Assert.Empty(modelState);
         }
 
         [Fact]
         public async Task BindParameter_WithData_GetsBound()
         {
             // Arrange
-            var argumentBinder = ModelBindingTestHelper.GetArgumentBinder();
+            var parameterBinder = ModelBindingTestHelper.GetParameterBinder();
             var parameter = new ParameterDescriptor()
             {
                 Name = "Parameter1",
@@ -111,7 +115,7 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
             var modelState = testContext.ModelState;
 
             // Act
-            var modelBindingResult = await argumentBinder.BindModelAsync(parameter, testContext);
+            var modelBindingResult = await parameterBinder.BindModelAsync(parameter, testContext);
 
             // Assert
 
@@ -120,11 +124,13 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
 
             // Model
             var token = Assert.IsType<CancellationToken>(modelBindingResult.Model);
-            Assert.NotNull(token);
+            Assert.False(token.IsCancellationRequested);
+            testContext.HttpContext.Abort();
+            Assert.True(token.IsCancellationRequested);
 
             // ModelState
             Assert.True(modelState.IsValid);
-            Assert.Equal(0, modelState.Count);
+            Assert.Empty(modelState);
         }
     }
 }

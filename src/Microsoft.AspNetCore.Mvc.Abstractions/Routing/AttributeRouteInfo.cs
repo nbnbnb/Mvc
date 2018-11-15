@@ -1,6 +1,8 @@
 // Copyright (c) .NET Foundation. All rights reserved.
 // Licensed under the Apache License, Version 2.0. See License.txt in the project root for license information.
 
+using Microsoft.AspNetCore.Routing;
+
 namespace Microsoft.AspNetCore.Mvc.Routing
 {
     /// <summary>
@@ -26,5 +28,15 @@ namespace Microsoft.AspNetCore.Mvc.Routing
         /// route by provided route data.
         /// </summary>
         public string Name { get; set; }
+
+        /// <summary>
+        /// Gets or sets a value that determines if the route entry associated with this model participates in link generation.
+        /// </summary>
+        public bool SuppressLinkGeneration { get; set; }
+
+        /// <summary>
+        /// Gets or sets a value that determines if the route entry associated with this model participates in path matching (inbound routing).
+        /// </summary>
+        public bool SuppressPathMatching { get; set; }
     }
 }

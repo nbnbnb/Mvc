@@ -10,7 +10,6 @@ namespace ApiExplorerWebSite
     public class ApiExplorerResponseTypeWithoutAttributeController : Controller
     {
         [HttpGet]
-        [ProducesResponseType(typeof(void), 204)]
         public void GetVoid()
         {
         }
@@ -40,13 +39,15 @@ namespace ApiExplorerWebSite
         }
 
         [HttpGet]
+        public ActionResult<Product> GetActionResultProduct() => null;
+
+        [HttpGet]
         public int GetInt()
         {
             return 0;
         }
 
         [HttpGet]
-        [ProducesResponseType(typeof(void), 204)]
         public Task GetTask()
         {
             return Task.FromResult(true);

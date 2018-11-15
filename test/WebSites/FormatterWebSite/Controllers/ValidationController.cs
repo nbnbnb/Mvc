@@ -19,7 +19,7 @@ namespace FormatterWebSite
                     ModelState["Designation"].Errors[0].ErrorMessage);
             }
 
-            return Content("User has been registerd : " + user.Name);
+            return Content("User has been registered : " + user.Name);
         }
 
         [HttpPost]
@@ -66,6 +66,23 @@ namespace FormatterWebSite
         public IActionResult CreateSimpleTypePropertiesModel([FromBody] SimpleTypePropertiesModel simpleTypePropertiesModel)
         {
             return Json(simpleTypePropertiesModel);
+        }
+
+        [HttpPost]
+        public IActionResult ValidationProviderAttribute([FromBody] ValidationProviderAttributeModel validationProviderAttributeModel)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            return Ok();
+        }
+
+        [HttpPost]
+        public IActionResult ValidationThrowsError_WhenValidationExceedsMaxValidationDepth([FromBody] InfinitelyRecursiveModel model)
+        {
+            return Ok();
         }
     }
 }

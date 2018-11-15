@@ -6,7 +6,6 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.AspNetCore.Mvc.ViewFeatures;
-using Microsoft.AspNetCore.Mvc.ViewFeatures.Internal;
 using Microsoft.Extensions.DependencyInjection;
 using Newtonsoft.Json;
 
@@ -25,9 +24,16 @@ namespace Microsoft.AspNetCore.Mvc
         /// Gets or sets <see cref="ViewDataDictionary"/> used by <see cref="ViewResult"/> and <see cref="ViewBag"/>.
         /// </summary>
         /// <remarks>
-        /// By default, this property is activated when <see cref="Controllers.IControllerActivator"/> activates
-        ///  controllers. However, when controllers are directly instantiated in user code, this property is
-        /// initialized with <see cref="EmptyModelMetadataProvider"/>.
+        /// By default, this property is initialized when <see cref="Controllers.IControllerActivator"/> activates
+        /// controllers.
+        /// <para>
+        /// This property can be accessed after the controller has been activated, for example, in a controller action
+        /// or by overriding <see cref="OnActionExecuting(ActionExecutingContext)"/>.
+        /// </para>
+        /// <para>
+        /// This property can be also accessed from within a unit test where it is initialized with
+        /// <see cref="EmptyModelMetadataProvider"/>.
+        /// </para>
         /// </remarks>
         [ViewDataDictionary]
         public ViewDataDictionary ViewData
@@ -108,12 +114,12 @@ namespace Microsoft.AspNetCore.Mvc
         /// <summary>
         /// Creates a <see cref="ViewResult"/> object by specifying a <paramref name="viewName"/>.
         /// </summary>
-        /// <param name="viewName">The name of the view that is rendered to the response.</param>
+        /// <param name="viewName">The name or path of the view that is rendered to the response.</param>
         /// <returns>The created <see cref="ViewResult"/> object for the response.</returns>
         [NonAction]
         public virtual ViewResult View(string viewName)
         {
-            return View(viewName, model: null);
+            return View(viewName, model: ViewData.Model);
         }
 
         /// <summary>
@@ -132,17 +138,13 @@ namespace Microsoft.AspNetCore.Mvc
         /// Creates a <see cref="ViewResult"/> object by specifying a <paramref name="viewName"/>
         /// and the <paramref name="model"/> to be rendered by the view.
         /// </summary>
-        /// <param name="viewName">The name of the view that is rendered to the response.</param>
+        /// <param name="viewName">The name or path of the view that is rendered to the response.</param>
         /// <param name="model">The model that is rendered by the view.</param>
         /// <returns>The created <see cref="ViewResult"/> object for the response.</returns>
         [NonAction]
         public virtual ViewResult View(string viewName, object model)
         {
-            // Do not override ViewData.Model unless passed a non-null value.
-            if (model != null)
-            {
-                ViewData.Model = model;
-            }
+            ViewData.Model = model;
 
             return new ViewResult()
             {
@@ -165,12 +167,12 @@ namespace Microsoft.AspNetCore.Mvc
         /// <summary>
         /// Creates a <see cref="PartialViewResult"/> object by specifying a <paramref name="viewName"/>.
         /// </summary>
-        /// <param name="viewName">The name of the view that is rendered to the response.</param>
+        /// <param name="viewName">The name or path of the partial view that is rendered to the response.</param>
         /// <returns>The created <see cref="PartialViewResult"/> object for the response.</returns>
         [NonAction]
         public virtual PartialViewResult PartialView(string viewName)
         {
-            return PartialView(viewName, model: null);
+            return PartialView(viewName, model: ViewData.Model);
         }
 
         /// <summary>
@@ -189,17 +191,13 @@ namespace Microsoft.AspNetCore.Mvc
         /// Creates a <see cref="PartialViewResult"/> object by specifying a <paramref name="viewName"/>
         /// and the <paramref name="model"/> to be rendered by the partial view.
         /// </summary>
-        /// <param name="viewName">The name of the partial view that is rendered to the response.</param>
+        /// <param name="viewName">The name or path of the partial view that is rendered to the response.</param>
         /// <param name="model">The model that is rendered by the partial view.</param>
         /// <returns>The created <see cref="PartialViewResult"/> object for the response.</returns>
         [NonAction]
         public virtual PartialViewResult PartialView(string viewName, object model)
         {
-            // Do not override ViewData.Model unless passed a non-null value.
-            if (model != null)
-            {
-                ViewData.Model = model;
-            }
+            ViewData.Model = model;
 
             return new PartialViewResult()
             {

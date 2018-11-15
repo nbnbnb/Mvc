@@ -3,6 +3,9 @@
 
 using System;
 using System.Collections.Generic;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Microsoft.AspNetCore.Mvc.ModelBinding.Binders
 {
@@ -22,12 +25,18 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Binders
             if (context.Metadata.IsComplexType && !context.Metadata.IsCollectionType)
             {
                 var propertyBinders = new Dictionary<ModelMetadata, IModelBinder>();
-                foreach (var property in context.Metadata.Properties)
+                for (var i = 0; i < context.Metadata.Properties.Count; i++)
                 {
+                    var property = context.Metadata.Properties[i];
                     propertyBinders.Add(property, context.CreateBinder(property));
                 }
 
-                return new ComplexTypeModelBinder(propertyBinders);
+                var loggerFactory = context.Services.GetRequiredService<ILoggerFactory>();
+                var mvcOptions = context.Services.GetRequiredService<IOptions<MvcOptions>>().Value;
+                return new ComplexTypeModelBinder(
+                    propertyBinders,
+                    loggerFactory,
+                    mvcOptions.AllowValidatingTopLevelNodes);
             }
 
             return null;

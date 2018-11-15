@@ -5,7 +5,9 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using Microsoft.AspNetCore.Mvc.Abstractions;
+using Microsoft.AspNetCore.Mvc.Formatters;
 using Microsoft.Extensions.Primitives;
 
 namespace Microsoft.AspNetCore.Mvc.ModelBinding
@@ -21,7 +23,9 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
         /// The default value for <see cref="MaxAllowedErrors"/> of <c>200</c>.
         /// </summary>
         public static readonly int DefaultMaxAllowedErrors = 200;
-        private static readonly char[] Delimiters = new char[] { '.', '[' };
+
+        private const char DelimiterDot = '.';
+        private const char DelimiterOpen = '[';
 
         private readonly ModelStateNode _root;
         private int _maxAllowedErrors;
@@ -109,10 +113,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
         /// Returns <c>true</c> if a <see cref="TooManyModelErrorsException"/> has been recorded;
         /// otherwise <c>false</c>.
         /// </remarks>
-        public bool HasReachedMaxErrors
-        {
-            get { return ErrorCount >= MaxAllowedErrors; }
-        }
+        public bool HasReachedMaxErrors => ErrorCount >= MaxAllowedErrors;
 
         /// <summary>
         /// Gets the number of errors added to this instance of <see cref="ModelStateDictionary"/> via
@@ -146,7 +147,8 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
         {
             get
             {
-                return ValidationState == ModelValidationState.Valid || ValidationState == ModelValidationState.Skipped;
+                var state = ValidationState;
+                return state == ModelValidationState.Valid || state == ModelValidationState.Skipped;
             }
         }
 
@@ -163,21 +165,64 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
                     throw new ArgumentNullException(nameof(key));
                 }
 
-                ModelStateEntry entry;
-                TryGetValue(key, out entry);
+                TryGetValue(key, out var entry);
                 return entry;
             }
         }
 
-        // Flag that indiciates if TooManyModelErrorException has already been added to this dictionary.
+        // Flag that indicates if TooManyModelErrorException has already been added to this dictionary.
         private bool HasRecordedMaxModelError { get; set; }
 
         /// <summary>
         /// Adds the specified <paramref name="exception"/> to the <see cref="ModelStateEntry.Errors"/> instance
-        /// that is associated with the specified <paramref name="key"/>.
+        /// that is associated with the specified <paramref name="key"/>. If the maximum number of allowed
+        /// errors has already been recorded, ensures that a <see cref="TooManyModelErrorsException"/> exception is
+        /// recorded instead.
         /// </summary>
+        /// <remarks>
+        /// This method allows adding the <paramref name="exception"/> to the current <see cref="ModelStateDictionary"/>
+        /// when <see cref="ModelMetadata"/> is not available or the exact <paramref name="exception"/>
+        /// must be maintained for later use (even if it is for example a <see cref="FormatException"/>).
+        /// Where <see cref="ModelMetadata"/> is available, use <see cref="AddModelError(string, Exception, ModelMetadata)"/> instead.
+        /// </remarks>
         /// <param name="key">The key of the <see cref="ModelStateEntry"/> to add errors to.</param>
         /// <param name="exception">The <see cref="Exception"/> to add.</param>
+        /// <returns>
+        /// <c>True</c> if the given error was added, <c>false</c> if the error was ignored.
+        /// See <see cref="MaxAllowedErrors"/>.
+        /// </returns>
+        public bool TryAddModelException(string key, Exception exception)
+        {
+            if (key == null)
+            {
+                throw new ArgumentNullException(nameof(key));
+            }
+
+            if (exception == null)
+            {
+                throw new ArgumentNullException(nameof(exception));
+            }
+
+            if (ErrorCount >= MaxAllowedErrors - 1)
+            {
+                EnsureMaxErrorsReachedRecorded();
+                return false;
+            }
+
+            ErrorCount++;
+            AddModelErrorCore(key, exception);
+            return true;
+        }
+
+        /// <summary>
+        /// Adds the specified <paramref name="exception"/> to the <see cref="ModelStateEntry.Errors"/> instance
+        /// that is associated with the specified <paramref name="key"/>. If the maximum number of allowed
+        /// errors has already been recorded, ensures that a <see cref="TooManyModelErrorsException"/> exception is
+        /// recorded instead.
+        /// </summary>
+        /// <param name="key">The key of the <see cref="ModelStateEntry"/> to add errors to.</param>
+        /// <param name="exception">The <see cref="Exception"/> to add. Some exception types will be replaced with
+        /// a descriptive error message.</param>
         /// <param name="metadata">The <see cref="ModelMetadata"/> associated with the model.</param>
         public void AddModelError(string key, Exception exception, ModelMetadata metadata)
         {
@@ -202,10 +247,12 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
         /// <summary>
         /// Attempts to add the specified <paramref name="exception"/> to the <see cref="ModelStateEntry.Errors"/>
         /// instance that is associated with the specified <paramref name="key"/>. If the maximum number of allowed
-        /// errors has already been recorded, records a <see cref="TooManyModelErrorsException"/> exception instead.
+        /// errors has already been recorded, ensures that a <see cref="TooManyModelErrorsException"/> exception is
+        /// recorded instead.
         /// </summary>
         /// <param name="key">The key of the <see cref="ModelStateEntry"/> to add errors to.</param>
-        /// <param name="exception">The <see cref="Exception"/> to add.</param>
+        /// <param name="exception">The <see cref="Exception"/> to add. Some exception types will be replaced with
+        /// a descriptive error message.</param>
         /// <param name="metadata">The <see cref="ModelMetadata"/> associated with the model.</param>
         /// <returns>
         /// <c>True</c> if the given error was added, <c>false</c> if the error was ignored.
@@ -237,23 +284,37 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             if (exception is FormatException || exception is OverflowException)
             {
                 // Convert FormatExceptions and OverflowExceptions to Invalid value messages.
-                ModelStateEntry entry;
-                TryGetValue(key, out entry);
+                TryGetValue(key, out var entry);
 
-                var name = metadata.GetDisplayName();
+                // Not using metadata.GetDisplayName() or a single resource to avoid strange messages like
+                // "The value '' is not valid." (when no value was provided, not even an empty string) and
+                // "The supplied value is invalid for Int32." (when error is for an element or parameter).
+                var messageProvider = metadata.ModelBindingMessageProvider;
+                var name = metadata.DisplayName ?? metadata.PropertyName;
                 string errorMessage;
-                if (entry == null)
+                if (entry == null && name == null)
                 {
-                    errorMessage = metadata.ModelBindingMessageProvider.UnknownValueIsInvalidAccessor(name);
+                    errorMessage = messageProvider.NonPropertyUnknownValueIsInvalidAccessor();
+                }
+                else if (entry == null)
+                {
+                    errorMessage = messageProvider.UnknownValueIsInvalidAccessor(name);
+                }
+                else if (name == null)
+                {
+                    errorMessage = messageProvider.NonPropertyAttemptedValueIsInvalidAccessor(entry.AttemptedValue);
                 }
                 else
                 {
-                    errorMessage = metadata.ModelBindingMessageProvider.AttemptedValueIsInvalidAccessor(
-                        entry.AttemptedValue,
-                        name);
+                    errorMessage = messageProvider.AttemptedValueIsInvalidAccessor(entry.AttemptedValue, name);
                 }
 
                 return TryAddModelError(key, errorMessage);
+            }
+            else if (exception is InputFormatterException && !string.IsNullOrEmpty(exception.Message))
+            {
+                // InputFormatterException is a signal that the message is safe to expose to clients
+                return TryAddModelError(key, exception.Message);
             }
 
             ErrorCount++;
@@ -263,7 +324,9 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
 
         /// <summary>
         /// Adds the specified <paramref name="errorMessage"/> to the <see cref="ModelStateEntry.Errors"/> instance
-        /// that is associated with the specified <paramref name="key"/>.
+        /// that is associated with the specified <paramref name="key"/>. If the maximum number of allowed
+        /// errors has already been recorded, ensures that a <see cref="TooManyModelErrorsException"/> exception is
+        /// recorded instead.
         /// </summary>
         /// <param name="key">The key of the <see cref="ModelStateEntry"/> to add errors to.</param>
         /// <param name="errorMessage">The error message to add.</param>
@@ -285,7 +348,8 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
         /// <summary>
         /// Attempts to add the specified <paramref name="errorMessage"/> to the <see cref="ModelStateEntry.Errors"/>
         /// instance that is associated with the specified <paramref name="key"/>. If the maximum number of allowed
-        /// errors has already been recorded, records a <see cref="TooManyModelErrorsException"/> exception instead.
+        /// errors has already been recorded, ensures that a <see cref="TooManyModelErrorsException"/> exception is
+        /// recorded instead.
         /// </summary>
         /// <param name="key">The key of the <see cref="ModelStateEntry"/> to add errors to.</param>
         /// <param name="errorMessage">The error message to add.</param>
@@ -354,8 +418,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
                 throw new ArgumentNullException(nameof(key));
             }
 
-            ModelStateEntry validationState;
-            if (TryGetValue(key, out validationState))
+            if (TryGetValue(key, out var validationState))
             {
                 return validationState.ValidationState;
             }
@@ -502,18 +565,34 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             }
         }
 
-        private ModelStateNode GetNode(string key) => GetNode(key, createIfNotExists: false);
-
-        private ModelStateNode GetOrAddNode(string key) => GetNode(key, createIfNotExists: true);
-
-        private ModelStateNode GetNode(string key, bool createIfNotExists)
+        private ModelStateNode GetNode(string key)
         {
             Debug.Assert(key != null);
-            if (key.Length == 0)
+
+            var current = _root;
+            if (key.Length > 0)
             {
-                return _root;
+                var match = default(MatchResult);
+                do
+                {
+                    var subKey = FindNext(key, ref match);
+                    current = current.GetNode(subKey);
+
+                    // Path not found, exit early
+                    if (current == null)
+                    {
+                        break;
+                    }
+
+                } while (match.Type != Delimiter.None);
             }
 
+            return current;
+        }
+
+        private ModelStateNode GetOrAddNode(string key)
+        {
+            Debug.Assert(key != null);
             // For a key of the format, foo.bar[0].baz[qux] we'll create the following nodes:
             // foo
             //  -> bar
@@ -522,42 +601,56 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             //     -> [qux]
 
             var current = _root;
-            var previousIndex = 0;
-            int index;
-            while ((index = key.IndexOfAny(Delimiters, previousIndex)) != -1)
+            if (key.Length > 0)
             {
-                var keyStart = previousIndex == 0 || key[previousIndex - 1] == '.'
-                    ? previousIndex
-                    : previousIndex - 1;
-                var subKey = new StringSegment(key, keyStart, index - keyStart);
-                current = current.GetNode(subKey, createIfNotExists);
-                if (current == null)
+                var match = default(MatchResult);
+                do
                 {
-                    // createIfNotExists is set to false and a node wasn't found. Exit early.
-                    return null;
+                    var subKey = FindNext(key, ref match);
+                    current = current.GetOrAddNode(subKey);
+
+                } while (match.Type != Delimiter.None);
+
+                if (current.Key == null)
+                {
+                    // New Node - Set key
+                    current.Key = key;
                 }
-
-                previousIndex = index + 1;
-            }
-
-            if (previousIndex < key.Length)
-            {
-                var keyStart = previousIndex == 0 || key[previousIndex - 1] == '.'
-                    ? previousIndex
-                    : previousIndex - 1;
-                var subKey = new StringSegment(key, keyStart, key.Length - keyStart);
-                current = current.GetNode(subKey, createIfNotExists);
-            }
-
-            if (current != null && current.Key == null)
-            {
-                // Don't update the key if it's been previously assigned. This is to prevent change in key casing
-                // e.g. modelState.SetModelValue("foo", .., ..);
-                // var value = modelState["FOO"];
-                current.Key = key;
             }
 
             return current;
+        }
+
+        // Shared function factored out for clarity, force inlining to put back in
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static StringSegment FindNext(string key, ref MatchResult currentMatch)
+        {
+            var index = currentMatch.Index;
+            var matchType = Delimiter.None;
+
+            for (; index < key.Length; index++)
+            {
+                var ch = key[index];
+                if (ch == DelimiterDot)
+                {
+                    matchType = Delimiter.Dot;
+                    break;
+                }
+                else if (ch == DelimiterOpen)
+                {
+                    matchType = Delimiter.OpenBracket;
+                    break;
+                }
+            }
+
+            var keyStart = currentMatch.Type == Delimiter.OpenBracket
+                ? currentMatch.Index - 1
+                : currentMatch.Index;
+
+            currentMatch.Type = matchType;
+            currentMatch.Index = index + 1;
+
+            return new StringSegment(key, keyStart, index - keyStart);
         }
 
         private static ModelValidationState? GetValidity(ModelStateNode node)
@@ -625,7 +718,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
         }
 
         /// <summary>
-        /// Removes all keys and values from ths instance of <see cref="ModelStateDictionary"/>.
+        /// Removes all keys and values from this instance of <see cref="ModelStateDictionary"/>.
         /// </summary>
         public void Clear()
         {
@@ -757,6 +850,19 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             return new PrefixEnumerable(this, prefix);
         }
 
+        private struct MatchResult
+        {
+            public Delimiter Type;
+            public int Index;
+        }
+
+        private enum Delimiter
+        {
+            None = 0,
+            Dot,
+            OpenBracket
+        }
+
         [DebuggerDisplay("SubKey={SubKey}, Key={Key}, ValidationState={ValidationState}")]
         private class ModelStateNode : ModelStateEntry
         {
@@ -804,42 +910,63 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
                 Errors.Clear();
             }
 
-            public ModelStateNode GetNode(StringSegment subKey, bool createIfNotExists)
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public ModelStateNode GetNode(StringSegment subKey)
             {
+                ModelStateNode modelStateNode = null;
                 if (subKey.Length == 0)
                 {
-                    return this;
+                    modelStateNode = this;
                 }
-
-                var index = BinarySearch(subKey);
-                ModelStateNode modelStateNode = null;
-                if (index >= 0)
+                else if (ChildNodes != null)
                 {
-                    modelStateNode = ChildNodes[index];
-                }
-                else if (createIfNotExists)
-                {
-                    if (ChildNodes == null)
+                    var index = BinarySearch(subKey);
+                    if (index >= 0)
                     {
-                        ChildNodes = new List<ModelStateNode>(1);
+                        modelStateNode = ChildNodes[index];
                     }
+                }
 
+                return modelStateNode;
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public ModelStateNode GetOrAddNode(StringSegment subKey)
+            {
+                ModelStateNode modelStateNode;
+                if (subKey.Length == 0)
+                {
+                    modelStateNode = this;
+                }
+                else if (ChildNodes == null)
+                {
+                    ChildNodes = new List<ModelStateNode>(1);
                     modelStateNode = new ModelStateNode(subKey);
-                    ChildNodes.Insert(~index, modelStateNode);
+                    ChildNodes.Add(modelStateNode);
+                }
+                else
+                {
+                    var index = BinarySearch(subKey);
+                    if (index >= 0)
+                    {
+                        modelStateNode = ChildNodes[index];
+                    }
+                    else
+                    {
+                        modelStateNode = new ModelStateNode(subKey);
+                        ChildNodes.Insert(~index, modelStateNode);
+                    }
                 }
 
                 return modelStateNode;
             }
 
             public override ModelStateEntry GetModelStateForProperty(string propertyName)
-                => GetNode(new StringSegment(propertyName), createIfNotExists: false);
+                => GetNode(new StringSegment(propertyName));
 
             private int BinarySearch(StringSegment searchKey)
             {
-                if (ChildNodes == null)
-                {
-                    return -1;
-                }
+                Debug.Assert(ChildNodes != null);
 
                 var low = 0;
                 var high = ChildNodes.Count - 1;
@@ -877,7 +1004,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             }
         }
 
-        public struct PrefixEnumerable : IEnumerable<KeyValuePair<string, ModelStateEntry>>
+        public readonly struct PrefixEnumerable : IEnumerable<KeyValuePair<string, ModelStateEntry>>
         {
             private readonly ModelStateDictionary _dictionary;
             private readonly string _prefix;
@@ -1010,7 +1137,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             }
         }
 
-        public struct KeyEnumerable : IEnumerable<string>
+        public readonly struct KeyEnumerable : IEnumerable<string>
         {
             private readonly ModelStateDictionary _dictionary;
 
@@ -1065,7 +1192,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             }
         }
 
-        public struct ValueEnumerable : IEnumerable<ModelStateEntry>
+        public readonly struct ValueEnumerable : IEnumerable<ModelStateEntry>
         {
             private readonly ModelStateDictionary _dictionary;
 

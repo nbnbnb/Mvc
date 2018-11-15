@@ -52,6 +52,15 @@ namespace HtmlGenerationWebSite.Controllers
         {
             _productsList = new SelectList(_products, "Number", "ProductName");
             _productsListWithSelection = new SelectList(_products, "Number", "ProductName", 2);
+            foreach (var i in _order.Products)
+            {
+                _order.ProductDetails.Add(_products[i]);
+            }
+        }
+
+        public IActionResult Enum()
+        {
+            return View(new AClass { DayOfWeek = Models.DayOfWeek.Friday, Month = Month.FirstOne });
         }
 
         public IActionResult Order()
@@ -97,6 +106,18 @@ namespace HtmlGenerationWebSite.Controllers
         public IActionResult ProductList()
         {
             return View(_products);
+        }
+
+        public IActionResult ProductListUsingTagHelpers() => View(_products);
+
+        public IActionResult ProductListUsingTagHelpersWithNullModel()
+        {
+            var model = new List<Product>
+            {
+                null,
+            };
+
+            return View(nameof(ProductListUsingTagHelpers), model);
         }
 
         public IActionResult EmployeeList()
@@ -156,6 +177,22 @@ namespace HtmlGenerationWebSite.Controllers
             return View(warehouse);
         }
 
+        public IActionResult Warehouse()
+        {
+            var warehouse = new Warehouse
+            {
+                City = "City_1",
+                Employee = new Employee
+                {
+                    Name = "EmployeeName_1",
+                    OfficeNumber = "Number_1",
+                    Address = "Address_1",
+                }
+            };
+
+            return View(warehouse);
+        }
+
         public IActionResult Environment()
         {
             return View();
@@ -200,5 +237,16 @@ namespace HtmlGenerationWebSite.Controllers
         {
             return View();
         }
+
+        public IActionResult ValidationProviderAttribute() => View();
+
+        [HttpPost]
+        public IActionResult ValidationProviderAttribute(ValidationProviderAttributeModel model) => View(model);
+
+        public IActionResult PartialTagHelperWithoutModel() => View();
+
+        public IActionResult StatusMessage() => View(new StatusMessageModel { Message = "Some status message"});
+
+        public IActionResult NullStatusMessage() => View("StatusMessage", new StatusMessageModel());
     }
 }

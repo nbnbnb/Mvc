@@ -5,15 +5,17 @@ using System;
 using System.Buffers;
 using System.Linq;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ApplicationModels;
 using Microsoft.AspNetCore.Mvc.ApplicationParts;
 using Microsoft.AspNetCore.Mvc.Controllers;
 using Microsoft.AspNetCore.Mvc.Formatters;
-using Microsoft.AspNetCore.Mvc.Internal;
+using Microsoft.AspNetCore.Mvc.Infrastructure;
 using Microsoft.AspNetCore.Mvc.Rendering;
 using Microsoft.AspNetCore.Mvc.ViewComponents;
 using Microsoft.AspNetCore.Mvc.ViewEngines;
 using Microsoft.AspNetCore.Mvc.ViewFeatures;
-using Microsoft.AspNetCore.Mvc.ViewFeatures.Internal;
+using Microsoft.AspNetCore.Mvc.ViewFeatures.Buffers;
+using Microsoft.AspNetCore.Mvc.ViewFeatures.Filters;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 
@@ -31,6 +33,28 @@ namespace Microsoft.Extensions.DependencyInjection
             builder.AddDataAnnotations();
             AddViewComponentApplicationPartsProviders(builder.PartManager);
             AddViewServices(builder.Services);
+            return builder;
+        }
+
+        /// <summary>
+        /// Registers <see cref="CookieTempDataProvider"/> as the default <see cref="ITempDataProvider"/> in the
+        /// <see cref="IServiceCollection"/>. Also registers the default view services.
+        /// </summary>
+        /// <param name="builder">The <see cref="IMvcCoreBuilder"/>.</param>
+        /// <returns>The <see cref="IMvcCoreBuilder"/>.</returns>
+        public static IMvcCoreBuilder AddCookieTempDataProvider(this IMvcCoreBuilder builder)
+        {
+            if (builder == null)
+            {
+                throw new ArgumentNullException(nameof(builder));
+            }
+
+            // Ensure the TempData basics are registered.
+            AddViewServices(builder.Services);
+
+            var descriptor = ServiceDescriptor.Singleton(typeof(ITempDataProvider), typeof(CookieTempDataProvider));
+            builder.Services.Replace(descriptor);
+
             return builder;
         }
 
@@ -56,13 +80,38 @@ namespace Microsoft.Extensions.DependencyInjection
                 throw new ArgumentNullException(nameof(setupAction));
             }
 
-            builder.AddDataAnnotations();
-            AddViewServices(builder.Services);
+            AddViews(builder);
+            builder.Services.Configure(setupAction);
 
-            if (setupAction != null)
+            return builder;
+        }
+
+        /// <summary>
+        /// Registers <see cref="CookieTempDataProvider"/> as the default <see cref="ITempDataProvider"/> in the
+        /// <see cref="IServiceCollection"/>. Also registers the default view services.
+        /// </summary>
+        /// <param name="builder">The <see cref="IMvcCoreBuilder"/>.</param>
+        /// <param name="setupAction">
+        /// An <see cref="Action{CookieTempDataProviderOptions}"/> to configure the provided
+        /// <see cref="CookieTempDataProviderOptions"/>.
+        /// </param>
+        /// <returns>The <see cref="IMvcCoreBuilder"/>.</returns>
+        public static IMvcCoreBuilder AddCookieTempDataProvider(
+            this IMvcCoreBuilder builder,
+            Action<CookieTempDataProviderOptions> setupAction)
+        {
+            if (builder == null)
             {
-                builder.Services.Configure(setupAction);
+                throw new ArgumentNullException(nameof(builder));
             }
+
+            if (setupAction == null)
+            {
+                throw new ArgumentNullException(nameof(setupAction));
+            }
+
+            AddCookieTempDataProvider(builder);
+            builder.Services.Configure(setupAction);
 
             return builder;
         }
@@ -95,14 +144,16 @@ namespace Microsoft.Extensions.DependencyInjection
             services.TryAddEnumerable(
                 ServiceDescriptor.Transient<IConfigureOptions<MvcViewOptions>, MvcViewOptionsSetup>());
             services.TryAddEnumerable(
+                ServiceDescriptor.Transient<IPostConfigureOptions<MvcViewOptions>, MvcViewOptionsConfigureCompatibilityOptions>());
+            services.TryAddEnumerable(
                 ServiceDescriptor.Transient<IConfigureOptions<MvcOptions>, TempDataMvcOptionsSetup>());
 
             //
             // View Engine and related infrastructure
             //
             services.TryAddSingleton<ICompositeViewEngine, CompositeViewEngine>();
-            services.TryAddSingleton<ViewResultExecutor>();
-            services.TryAddSingleton<PartialViewResultExecutor>();
+            services.TryAddSingleton<IActionResultExecutor<ViewResult>, ViewResultExecutor>();
+            services.TryAddSingleton<IActionResultExecutor<PartialViewResult>, PartialViewResultExecutor>();
 
             // Support for activating ViewDataDictionary
             services.TryAddEnumerable(
@@ -117,12 +168,13 @@ namespace Microsoft.Extensions.DependencyInjection
             services.TryAddSingleton<IHtmlGenerator, DefaultHtmlGenerator>();
             services.TryAddSingleton<ExpressionTextCache>();
             services.TryAddSingleton<IModelExpressionProvider, ModelExpressionProvider>();
+            services.TryAddSingleton<ValidationHtmlAttributeProvider, DefaultValidationHtmlAttributeProvider>();
 
             //
             // JSON Helper
             //
             services.TryAddSingleton<IJsonHelper, JsonHelper>();
-            services.TryAdd(ServiceDescriptor.Singleton<JsonOutputFormatter>(serviceProvider =>
+            services.TryAdd(ServiceDescriptor.Singleton(serviceProvider =>
             {
                 var options = serviceProvider.GetRequiredService<IOptions<MvcJsonOptions>>().Value;
                 var charPool = serviceProvider.GetRequiredService<ArrayPool<char>>();
@@ -132,7 +184,7 @@ namespace Microsoft.Extensions.DependencyInjection
             //
             // View Components
             //
-            
+
             // These do caching so they should stay singleton
             services.TryAddSingleton<IViewComponentSelector, DefaultViewComponentSelector>();
             services.TryAddSingleton<IViewComponentFactory, DefaultViewComponentFactory>();
@@ -140,7 +192,7 @@ namespace Microsoft.Extensions.DependencyInjection
             services.TryAddSingleton<
                 IViewComponentDescriptorCollectionProvider,
                 DefaultViewComponentDescriptorCollectionProvider>();
-            services.TryAddTransient<ViewComponentResultExecutor>();
+            services.TryAddSingleton<IActionResultExecutor<ViewComponentResult>, ViewComponentResultExecutor>();
 
             services.TryAddSingleton<ViewComponentInvokerCache>();
             services.TryAddTransient<IViewComponentDescriptorProvider, DefaultViewComponentDescriptorProvider>();
@@ -150,8 +202,17 @@ namespace Microsoft.Extensions.DependencyInjection
             //
             // Temp Data
             //
+            services.TryAddEnumerable(
+                ServiceDescriptor.Transient<IApplicationModelProvider, TempDataApplicationModelProvider>());
+            services.TryAddEnumerable(
+                ServiceDescriptor.Transient<IApplicationModelProvider, ViewDataAttributeApplicationModelProvider>());
+            services.TryAddSingleton<SaveTempDataFilter>();
+
+
+            services.TryAddTransient<ControllerSaveTempDataPropertyFilter>();
+
             // This does caching so it should stay singleton
-            services.TryAddSingleton<ITempDataProvider, SessionStateTempDataProvider>();
+            services.TryAddSingleton<ITempDataProvider, CookieTempDataProvider>();
 
             //
             // Antiforgery
@@ -161,8 +222,6 @@ namespace Microsoft.Extensions.DependencyInjection
 
             // These are stateless so their lifetime isn't really important.
             services.TryAddSingleton<ITempDataDictionaryFactory, TempDataDictionaryFactory>();
-            services.TryAddSingleton<SaveTempDataFilter>();
-
             services.TryAddSingleton(ArrayPool<ViewBufferValue>.Shared);
             services.TryAddScoped<IViewBufferScope, MemoryPoolViewBufferScope>();
         }

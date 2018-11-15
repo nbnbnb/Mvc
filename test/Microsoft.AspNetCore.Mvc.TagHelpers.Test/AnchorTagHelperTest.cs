@@ -4,13 +4,13 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Reflection;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.AspNetCore.Mvc.Rendering;
 using Microsoft.AspNetCore.Mvc.Routing;
 using Microsoft.AspNetCore.Mvc.ViewFeatures;
 using Microsoft.AspNetCore.Razor.TagHelpers;
+using Microsoft.AspNetCore.Routing;
 using Moq;
 using Xunit;
 
@@ -26,6 +26,7 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
             var metadataProvider = new TestModelMetadataProvider();
 
             var tagHelperContext = new TagHelperContext(
+                tagName: "not-a",
                 allAttributes: new TagHelperAttributeList
                 {
                     { "id", "myanchor" },
@@ -57,9 +58,10 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
                 .Setup(mock => mock.Action(It.IsAny<UrlActionContext>())).Returns("home/index");
 
             var htmlGenerator = new TestableHtmlGenerator(metadataProvider, urlHelper.Object);
-            var viewContext = TestableHtmlGenerator.GetViewContext(model: null,
-                                                                   htmlGenerator: htmlGenerator,
-                                                                   metadataProvider: metadataProvider);
+            var viewContext = TestableHtmlGenerator.GetViewContext(
+                model: null,
+                htmlGenerator: htmlGenerator,
+                metadataProvider: metadataProvider);
             var anchorTagHelper = new AnchorTagHelper(htmlGenerator)
             {
                 Action = "index",
@@ -92,6 +94,7 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
         {
             // Arrange
             var context = new TagHelperContext(
+                tagName: "a",
                 allAttributes: new TagHelperAttributeList(
                     Enumerable.Empty<TagHelperAttribute>()),
                 items: new Dictionary<object, object>(),
@@ -133,7 +136,7 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
             generator.Verify();
             Assert.Equal("a", output.TagName);
             Assert.Empty(output.Attributes);
-            Assert.True(output.Content.GetContent().Length == 0);
+            Assert.Empty(output.Content.GetContent());
         }
 
         [Fact]
@@ -141,6 +144,7 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
         {
             // Arrange
             var context = new TagHelperContext(
+                tagName: "a",
                 allAttributes: new TagHelperAttributeList(
                     Enumerable.Empty<TagHelperAttribute>()),
                 items: new Dictionary<object, object>(),
@@ -184,7 +188,7 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
             generator.Verify();
             Assert.Equal("a", output.TagName);
             Assert.Empty(output.Attributes);
-            Assert.True(output.Content.GetContent().Length == 0);
+            Assert.Empty(output.Content.GetContent());
         }
 
         [Fact]
@@ -192,6 +196,7 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
         {
             // Arrange
             var context = new TagHelperContext(
+                tagName: "a",
                 allAttributes: new TagHelperAttributeList(
                     Enumerable.Empty<TagHelperAttribute>()),
                 items: new Dictionary<object, object>(),
@@ -241,7 +246,7 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
 
             Assert.Equal("a", output.TagName);
             Assert.Empty(output.Attributes);
-            Assert.True(output.Content.GetContent().Length == 0);
+            Assert.Empty(output.Content.GetContent());
         }
 
         [Fact]
@@ -249,6 +254,7 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
         {
             // Arrange
             var context = new TagHelperContext(
+                tagName: "a",
                 allAttributes: new TagHelperAttributeList(
                     Enumerable.Empty<TagHelperAttribute>()),
                 items: new Dictionary<object, object>(),
@@ -299,7 +305,7 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
 
             Assert.Equal("a", output.TagName);
             Assert.Empty(output.Attributes);
-            Assert.True(output.Content.GetContent().Length == 0);
+            Assert.Empty(output.Content.GetContent());
         }
 
         [Fact]
@@ -307,6 +313,7 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
         {
             // Arrange
             var context = new TagHelperContext(
+                tagName: "a",
                 allAttributes: new TagHelperAttributeList(
                     Enumerable.Empty<TagHelperAttribute>()),
                 items: new Dictionary<object, object>(),
@@ -356,7 +363,120 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
 
             Assert.Equal("a", output.TagName);
             Assert.Empty(output.Attributes);
-            Assert.True(output.Content.GetContent().Length == 0);
+            Assert.Empty(output.Content.GetContent());
+        }
+
+        [Fact]
+        public async Task ProcessAsync_AddsPageToRouteValuesAndCallsPageLinkWithExpectedParameters()
+        {
+            // Arrange
+            var context = new TagHelperContext(
+                tagName: "a",
+                allAttributes: new TagHelperAttributeList(
+                    Enumerable.Empty<TagHelperAttribute>()),
+                items: new Dictionary<object, object>(),
+                uniqueId: "test");
+            var output = new TagHelperOutput(
+                "a",
+                attributes: new TagHelperAttributeList(),
+                getChildContentAsync: (useCachedResult, encoder) =>
+                {
+                    var tagHelperContent = new DefaultTagHelperContent();
+                    tagHelperContent.SetContent("Something");
+                    return Task.FromResult<TagHelperContent>(tagHelperContent);
+                });
+            output.Content.SetContent(string.Empty);
+
+            var generator = new Mock<IHtmlGenerator>();
+            generator
+                .Setup(mock => mock.GeneratePageLink(
+                    It.IsAny<ViewContext>(),
+                    string.Empty,
+                    "/User/Home/Index",
+                    "page-handler",
+                    "http",
+                    "contoso.com",
+                    "hello=world",
+                    It.IsAny<object>(),
+                    null))
+                .Returns(new TagBuilder("a"))
+                .Verifiable();
+            var anchorTagHelper = new AnchorTagHelper(generator.Object)
+            {
+                Page = "/User/Home/Index",
+                PageHandler = "page-handler",
+                Fragment = "hello=world",
+                Host = "contoso.com",
+                Protocol = "http",
+            };
+
+            // Act
+            await anchorTagHelper.ProcessAsync(context, output);
+
+            // Assert
+            generator.Verify();
+        }
+
+        [Fact]
+        public async Task ProcessAsync_AddsAreaToRouteValuesAndCallsPageLinkWithExpectedParameters()
+        {
+            // Arrange
+            var context = new TagHelperContext(
+                tagName: "a",
+                allAttributes: new TagHelperAttributeList(
+                    Enumerable.Empty<TagHelperAttribute>()),
+                items: new Dictionary<object, object>(),
+                uniqueId: "test");
+            var output = new TagHelperOutput(
+                "a",
+                attributes: new TagHelperAttributeList(),
+                getChildContentAsync: (useCachedResult, encoder) =>
+                {
+                    var tagHelperContent = new DefaultTagHelperContent();
+                    tagHelperContent.SetContent("Something");
+                    return Task.FromResult<TagHelperContent>(tagHelperContent);
+                });
+            output.Content.SetContent(string.Empty);
+
+            var generator = new Mock<IHtmlGenerator>();
+            generator
+                .Setup(mock => mock.GeneratePageLink(
+                    It.IsAny<ViewContext>(),
+                    string.Empty,
+                    "/User/Home/Index",
+                    "page-handler",
+                    "http",
+                    "contoso.com",
+                    "hello=world",
+                    It.IsAny<object>(),
+                    null))
+                .Callback((ViewContext v, string linkText, string pageName, string pageHandler, string protocol, string hostname, string fragment, object routeValues, object htmlAttributes) =>
+                {
+                    var rvd = Assert.IsType<RouteValueDictionary>(routeValues);
+                    Assert.Collection(rvd.OrderBy(item => item.Key),
+                        item =>
+                        {
+                            Assert.Equal("area", item.Key);
+                            Assert.Equal("test-area", item.Value);
+                        });
+                })
+                .Returns(new TagBuilder("a"))
+                .Verifiable();
+            var anchorTagHelper = new AnchorTagHelper(generator.Object)
+            {
+                Page = "/User/Home/Index",
+                Area = "test-area",
+                PageHandler = "page-handler",
+                Fragment = "hello=world",
+                Host = "contoso.com",
+                Protocol = "http",
+            };
+
+            // Act
+            await anchorTagHelper.ProcessAsync(context, output);
+
+            // Assert
+            generator.Verify();
         }
 
         [Theory]
@@ -367,6 +487,8 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
         [InlineData("Host")]
         [InlineData("Fragment")]
         [InlineData("asp-route-")]
+        [InlineData("Page")]
+        [InlineData("PageHandler")]
         public async Task ProcessAsync_ThrowsIfHrefConflictsWithBoundAttributes(string propertyName)
         {
             // Arrange
@@ -392,11 +514,12 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
             }
 
             var expectedErrorMessage = "Cannot override the 'href' attribute for <a>. An <a> with a specified " +
-                                       "'href' must not have attributes starting with 'asp-route-' or an " +
-                                       "'asp-action', 'asp-controller', 'asp-area', 'asp-route', 'asp-protocol', 'asp-host', or " +
-                                       "'asp-fragment' attribute.";
+                "'href' must not have attributes starting with 'asp-route-' or an " +
+                "'asp-action', 'asp-controller', 'asp-area', 'asp-route', 'asp-protocol', 'asp-host', " +
+                "'asp-fragment', 'asp-page' or 'asp-page-handler' attribute.";
 
             var context = new TagHelperContext(
+                tagName: "test",
                 allAttributes: new TagHelperAttributeList(
                     Enumerable.Empty<TagHelperAttribute>()),
                 items: new Dictionary<object, object>(),
@@ -428,10 +551,91 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
                 "a",
                 attributes: new TagHelperAttributeList(),
                 getChildContentAsync: (useCachedResult, encoder) => Task.FromResult<TagHelperContent>(null));
-            var expectedErrorMessage = "Cannot determine an 'href' attribute for <a>. An <a> with a specified " +
-                "'asp-route' must not have an 'asp-action' or 'asp-controller' attribute.";
+            var expectedErrorMessage = string.Join(
+                Environment.NewLine,
+                "Cannot determine the 'href' attribute for <a>. The following attributes are mutually exclusive:",
+                "asp-route",
+                "asp-controller, asp-action",
+                "asp-page, asp-page-handler");
 
             var context = new TagHelperContext(
+                tagName: "test",
+                allAttributes: new TagHelperAttributeList(
+                    Enumerable.Empty<TagHelperAttribute>()),
+                items: new Dictionary<object, object>(),
+                uniqueId: "test");
+
+            // Act & Assert
+            var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+                () => anchorTagHelper.ProcessAsync(context, output));
+
+            Assert.Equal(expectedErrorMessage, ex.Message);
+        }
+
+        [Fact]
+        public async Task ProcessAsync_ThrowsIfRouteAndPageProvided()
+        {
+            // Arrange
+            var metadataProvider = new EmptyModelMetadataProvider();
+            var htmlGenerator = new TestableHtmlGenerator(metadataProvider);
+
+            var anchorTagHelper = new AnchorTagHelper(htmlGenerator)
+            {
+                Route = "Default",
+                Page = "Page",
+            };
+
+            var output = new TagHelperOutput(
+                "a",
+                attributes: new TagHelperAttributeList(),
+                getChildContentAsync: (useCachedResult, encoder) => Task.FromResult<TagHelperContent>(null));
+            var expectedErrorMessage = string.Join(
+                Environment.NewLine,
+                "Cannot determine the 'href' attribute for <a>. The following attributes are mutually exclusive:",
+                "asp-route",
+                "asp-controller, asp-action",
+                "asp-page, asp-page-handler");
+
+            var context = new TagHelperContext(
+                tagName: "test",
+                allAttributes: new TagHelperAttributeList(
+                    Enumerable.Empty<TagHelperAttribute>()),
+                items: new Dictionary<object, object>(),
+                uniqueId: "test");
+
+            // Act & Assert
+            var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+                () => anchorTagHelper.ProcessAsync(context, output));
+
+            Assert.Equal(expectedErrorMessage, ex.Message);
+        }
+
+        [Fact]
+        public async Task ProcessAsync_ThrowsIfActionAndPageProvided()
+        {
+            // Arrange
+            var metadataProvider = new EmptyModelMetadataProvider();
+            var htmlGenerator = new TestableHtmlGenerator(metadataProvider);
+
+            var anchorTagHelper = new AnchorTagHelper(htmlGenerator)
+            {
+                Action = "Action",
+                Page = "Page",
+            };
+
+            var output = new TagHelperOutput(
+                "a",
+                attributes: new TagHelperAttributeList(),
+                getChildContentAsync: (useCachedResult, encoder) => Task.FromResult<TagHelperContent>(null));
+            var expectedErrorMessage = string.Join(
+                Environment.NewLine,
+                "Cannot determine the 'href' attribute for <a>. The following attributes are mutually exclusive:",
+                "asp-route",
+                "asp-controller, asp-action",
+                "asp-page, asp-page-handler");
+
+            var context = new TagHelperContext(
+                tagName: "test",
                 allAttributes: new TagHelperAttributeList(
                     Enumerable.Empty<TagHelperAttribute>()),
                 items: new Dictionary<object, object>(),

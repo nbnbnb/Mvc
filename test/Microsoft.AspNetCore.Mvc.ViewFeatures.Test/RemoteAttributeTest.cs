@@ -2,7 +2,6 @@
 // Licensed under the Apache License, Version 2.0. See License.txt in the project root for license information.
 
 using System;
-using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Abstractions;
@@ -16,10 +15,9 @@ using Microsoft.AspNetCore.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Localization;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Testing;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.ObjectPool;
 using Microsoft.Extensions.Options;
-using Microsoft.Extensions.WebEncoders.Testing;
 using Moq;
 using Xunit;
 using Resources = Microsoft.AspNetCore.Mvc.ViewFeatures.Test.Resources;
@@ -76,7 +74,7 @@ namespace Microsoft.AspNetCore.Mvc
 
             // Assert
             var keyValuePair = Assert.Single(attribute.RouteData);
-            Assert.Equal(keyValuePair.Key, "controller");
+            Assert.Equal("controller", keyValuePair.Key);
         }
 
         [Fact]
@@ -87,7 +85,7 @@ namespace Microsoft.AspNetCore.Mvc
 
             // Assert
             var keyValuePair = Assert.Single(attribute.RouteData);
-            Assert.Equal(keyValuePair.Key, "action");
+            Assert.Equal("action", keyValuePair.Key);
             Assert.Null(attribute.RouteName);
         }
 
@@ -230,13 +228,13 @@ namespace Microsoft.AspNetCore.Mvc
         {
             // Arrange
             var attribute = new RemoteAttribute(routeName: "default");
-            var expected = "Value cannot be null or empty." + Environment.NewLine + "Parameter name: property";
+            var expectedMessage = "Value cannot be null or empty.";
 
             // Act & Assert
-            var exception = Assert.Throws<ArgumentException>(
+            ExceptionAssert.ThrowsArgument(
+                () => attribute.FormatAdditionalFieldsForClientValidation(property),
                 "property",
-                () => attribute.FormatAdditionalFieldsForClientValidation(property));
-            Assert.Equal(expected, exception.Message);
+                expectedMessage);
         }
 
         [Theory]
@@ -244,13 +242,13 @@ namespace Microsoft.AspNetCore.Mvc
         public void FormatPropertyForClientValidation_WithInvalidPropertyName_Throws(string property)
         {
             // Arrange
-            var expected = "Value cannot be null or empty." + Environment.NewLine + "Parameter name: property";
+            var expected = "Value cannot be null or empty.";
 
             // Act & Assert
-            var exception = Assert.Throws<ArgumentException>(
+            ExceptionAssert.ThrowsArgument(
+                () => RemoteAttribute.FormatPropertyForClientValidation(property),
                 "property",
-                () => RemoteAttribute.FormatPropertyForClientValidation(property));
-            Assert.Equal(expected, exception.Message);
+                expected);
         }
 
         [Fact]
@@ -698,7 +696,7 @@ namespace Microsoft.AspNetCore.Mvc
                 kvp =>
                 {
                     Assert.Equal("data-val-remote-url", kvp.Key);
-                    Assert.Equal("/UrlEncode[[Controller]]/UrlEncode[[Action]]", kvp.Value);
+                    Assert.Equal("/Controller/Action", kvp.Value);
                 });
         }
 
@@ -723,7 +721,7 @@ namespace Microsoft.AspNetCore.Mvc
                 kvp =>
                 {
                     Assert.Equal("data-val-remote-url", kvp.Key);
-                    Assert.Equal("/UrlEncode[[Test]]/UrlEncode[[Controller]]/UrlEncode[[Action]]", kvp.Value);
+                    Assert.Equal("/Test/Controller/Action", kvp.Value);
                 });
         }
 
@@ -749,7 +747,7 @@ namespace Microsoft.AspNetCore.Mvc
                 kvp =>
                 {
                     Assert.Equal("data-val-remote-url", kvp.Key);
-                    Assert.Equal("/UrlEncode[[Controller]]/UrlEncode[[Action]]", kvp.Value);
+                    Assert.Equal("/Controller/Action", kvp.Value);
                 });
         }
 
@@ -775,7 +773,7 @@ namespace Microsoft.AspNetCore.Mvc
                 kvp =>
                 {
                     Assert.Equal("data-val-remote-url", kvp.Key);
-                    Assert.Equal("/UrlEncode[[Controller]]/UrlEncode[[Action]]", kvp.Value);
+                    Assert.Equal("/Controller/Action", kvp.Value);
                 });
         }
 
@@ -800,7 +798,7 @@ namespace Microsoft.AspNetCore.Mvc
                 kvp =>
                 {
                     Assert.Equal("data-val-remote-url", kvp.Key);
-                    Assert.Equal("/UrlEncode[[Test]]/UrlEncode[[Controller]]/UrlEncode[[Action]]", kvp.Value);
+                    Assert.Equal("/Test/Controller/Action", kvp.Value);
                 });
         }
 
@@ -825,7 +823,7 @@ namespace Microsoft.AspNetCore.Mvc
                 kvp =>
                 {
                     Assert.Equal("data-val-remote-url", kvp.Key);
-                    Assert.Equal("/UrlEncode[[Test]]/UrlEncode[[Controller]]/UrlEncode[[Action]]", kvp.Value);
+                    Assert.Equal("/Test/Controller/Action", kvp.Value);
                 });
         }
 
@@ -850,7 +848,7 @@ namespace Microsoft.AspNetCore.Mvc
                 kvp =>
                 {
                     Assert.Equal("data-val-remote-url", kvp.Key);
-                    Assert.Equal("/UrlEncode[[AnotherArea]]/UrlEncode[[Controller]]/UrlEncode[[Action]]", kvp.Value);
+                    Assert.Equal("/AnotherArea/Controller/Action", kvp.Value);
                 });
         }
 
@@ -1041,14 +1039,13 @@ namespace Microsoft.AspNetCore.Mvc
             var serviceCollection = new ServiceCollection();
             serviceCollection
                 .AddSingleton<ObjectPoolProvider, DefaultObjectPoolProvider>()
-                .AddSingleton<ILoggerFactory>(new NullLoggerFactory())
-                .AddSingleton<UrlEncoder>(new UrlTestEncoder());
+                .AddSingleton<ILoggerFactory>(new NullLoggerFactory());
 
             serviceCollection.AddOptions();
             serviceCollection.AddRouting();
 
             serviceCollection.AddSingleton<IInlineConstraintResolver>(
-                provider => new DefaultInlineConstraintResolver(provider.GetRequiredService<IOptions<RouteOptions>>()));
+                provider => new DefaultInlineConstraintResolver(provider.GetRequiredService<IOptions<RouteOptions>>(), provider));
 
             if (localizerFactory != null)
             {

@@ -66,30 +66,29 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Binders
             Assert.IsType<CollectionModelBinder<int>>(result);
         }
 
-        // These aren't ICollection<> - we can handle them by creating a List<> - but in this case
-        // we can't set the property so we can't bind.
         [Theory]
-        [InlineData(nameof(ReadOnlyProperties.Enumerable))]
-        [InlineData(nameof(ReadOnlyProperties.ReadOnlyCollection))]
-        [InlineData(nameof(ReadOnlyProperties.ReadOnlyList))]
-        public void Create_ForNonICollectionTypes_ReadOnlyProperty_ReturnsNull(string propertyName)
+        [InlineData(false)]
+        [InlineData(true)]
+        public void Create_ForSupportedType_ReturnsBinder_WithExpectedAllowValidatingTopLevelNodes(
+            bool allowValidatingTopLevelNodes)
         {
             // Arrange
             var provider = new CollectionModelBinderProvider();
 
-            var metadataProvider = TestModelBinderProviderContext.CachedMetadataProvider;
-
-            var metadata = metadataProvider.GetMetadataForProperty(typeof(ReadOnlyProperties), propertyName);
-            Assert.NotNull(metadata);
-            Assert.True(metadata.IsReadOnly);
-
-            var context = new TestModelBinderProviderContext(metadata, bindingInfo: null);
+            var context = new TestModelBinderProviderContext(typeof(List<int>));
+            context.MvcOptions.AllowValidatingTopLevelNodes = allowValidatingTopLevelNodes;
+            context.OnCreatingBinder(m =>
+            {
+                Assert.Equal(typeof(int), m.ModelType);
+                return Mock.Of<IModelBinder>();
+            });
 
             // Act
             var result = provider.GetBinder(context);
 
             // Assert
-            Assert.Null(result);
+            var binder = Assert.IsType<CollectionModelBinder<int>>(result);
+            Assert.Equal(allowValidatingTopLevelNodes, binder.AllowValidatingTopLevelNodes);
         }
 
         private class Person
@@ -97,15 +96,6 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Binders
             public string Name { get; set; }
 
             public int Age { get; set; }
-        }
-
-        private class ReadOnlyProperties
-        {
-            public IEnumerable<int> Enumerable { get; }
-
-            public IReadOnlyCollection<int> ReadOnlyCollection { get; }
-
-            public IReadOnlyList<int> ReadOnlyList { get; }
         }
     }
 }

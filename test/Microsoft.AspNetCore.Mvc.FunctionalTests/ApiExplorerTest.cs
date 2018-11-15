@@ -1,10 +1,14 @@
 // Copyright (c) .NET Foundation. All rights reserved.
 // Licensed under the Apache License, Version 2.0. See License.txt in the project root for license information.
 
-using System.Linq;
+using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Net;
 using System.Net.Http;
 using System.Threading.Tasks;
+using ApiExplorerWebSite;
 using Microsoft.AspNetCore.Mvc.Formatters;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.AspNetCore.Testing.xunit;
@@ -17,7 +21,7 @@ namespace Microsoft.AspNetCore.Mvc.FunctionalTests
     {
         public ApiExplorerTest(MvcTestFixture<ApiExplorerWebSite.Startup> fixture)
         {
-            Client = fixture.Client;
+            Client = fixture.CreateDefaultClient();
         }
 
         public HttpClient Client { get; }
@@ -26,7 +30,7 @@ namespace Microsoft.AspNetCore.Mvc.FunctionalTests
         public async Task ApiExplorer_IsVisible_EnabledWithConvention()
         {
             // Arrange & Act
-            var response = await Client.GetAsync("http://localhost/ApiExplorerVisbilityEnabledByConvention");
+            var response = await Client.GetAsync("http://localhost/ApiExplorerVisibilityEnabledByConvention");
 
             var body = await response.Content.ReadAsStringAsync();
             var result = JsonConvert.DeserializeObject<List<ApiExplorerData>>(body);
@@ -39,7 +43,7 @@ namespace Microsoft.AspNetCore.Mvc.FunctionalTests
         public async Task ApiExplorer_IsVisible_DisabledWithConvention()
         {
             // Arrange & Act
-            var response = await Client.GetAsync("http://localhost/ApiExplorerVisbilityDisabledByConvention");
+            var response = await Client.GetAsync("http://localhost/ApiExplorerVisibilityDisabledByConvention");
 
             var body = await response.Content.ReadAsStringAsync();
             var result = JsonConvert.DeserializeObject<List<ApiExplorerData>>(body);
@@ -85,7 +89,7 @@ namespace Microsoft.AspNetCore.Mvc.FunctionalTests
 
             // Assert
             var description = Assert.Single(result);
-            Assert.Equal(description.GroupName, "ApiExplorerNameSetByConvention");
+            Assert.Equal("ApiExplorerNameSetByConvention", description.GroupName);
         }
 
         [Fact]
@@ -99,7 +103,7 @@ namespace Microsoft.AspNetCore.Mvc.FunctionalTests
 
             // Assert
             var description = Assert.Single(result);
-            Assert.Equal(description.GroupName, "SetOnController");
+            Assert.Equal("SetOnController", description.GroupName);
         }
 
         [Fact]
@@ -113,7 +117,7 @@ namespace Microsoft.AspNetCore.Mvc.FunctionalTests
 
             // Assert
             var description = Assert.Single(result);
-            Assert.Equal(description.GroupName, "SetOnAction");
+            Assert.Equal("SetOnAction", description.GroupName);
         }
 
         [Fact]
@@ -127,7 +131,7 @@ namespace Microsoft.AspNetCore.Mvc.FunctionalTests
 
             // Assert
             var description = Assert.Single(result);
-            Assert.Equal(description.RelativePath, "ApiExplorerRouteAndPathParametersInformation");
+            Assert.Equal("ApiExplorerRouteAndPathParametersInformation", description.RelativePath);
         }
 
         [Fact]
@@ -141,7 +145,7 @@ namespace Microsoft.AspNetCore.Mvc.FunctionalTests
 
             // Assert
             var description = Assert.Single(result);
-            Assert.Equal(description.RelativePath, "ApiExplorerRouteAndPathParametersInformation/{id}");
+            Assert.Equal("ApiExplorerRouteAndPathParametersInformation/{id}", description.RelativePath);
 
             var parameter = Assert.Single(description.ParameterDescriptions);
             Assert.Equal("id", parameter.Name);
@@ -355,7 +359,7 @@ namespace Microsoft.AspNetCore.Mvc.FunctionalTests
         }
 
         [Fact]
-        public async Task ApiExplorer_HttpMethod_Single()
+        public async Task ApiExplorer_HttpMethod_Single_GET()
         {
             // Arrange & Act
             var response = await Client.GetAsync("http://localhost/ApiExplorerHttpMethod/Get");
@@ -370,14 +374,35 @@ namespace Microsoft.AspNetCore.Mvc.FunctionalTests
 
         // This is hitting one action with two allowed methods (using [AcceptVerbs]). This should
         // return two api descriptions.
-        [Theory]
-        [InlineData("PUT")]
-        [InlineData("POST")]
-        public async Task ApiExplorer_HttpMethod_Single(string httpMethod)
+        [Fact]
+        public async Task ApiExplorer_HttpMethod_Single_PUT()
         {
             // Arrange
             var request = new HttpRequestMessage(
-                new HttpMethod(httpMethod),
+                new HttpMethod("PUT"),
+                "http://localhost/ApiExplorerHttpMethod/Single");
+
+            // Act
+            var response = await Client.SendAsync(request);
+
+            var body = await response.Content.ReadAsStringAsync();
+            var result = JsonConvert.DeserializeObject<List<ApiExplorerData>>(body);
+
+            // Assert
+            Assert.Equal(2, result.Count);
+
+            Assert.Single(result, d => d.HttpMethod == "PUT");
+            Assert.Single(result, d => d.HttpMethod == "POST");
+        }
+
+        // This is hitting one action with two allowed methods (using [AcceptVerbs]). This should
+        // return two api descriptions.
+        [Fact]
+        public async Task ApiExplorer_HttpMethod_Single_POST()
+        {
+            // Arrange
+            var request = new HttpRequestMessage(
+                new HttpMethod("POST"),
                 "http://localhost/ApiExplorerHttpMethod/Single");
 
             // Act
@@ -394,9 +419,29 @@ namespace Microsoft.AspNetCore.Mvc.FunctionalTests
         }
 
         [Theory]
+        [InlineData("GetVoidWithExplicitResponseTypeStatusCode")]
+        [InlineData("GetTaskWithExplicitResponseTypeStatusCode")]
+        public async Task ApiExplorer_ResponseType_VoidWithResponseTypeAttributeStatusCode(string action)
+        {
+            // Arrange & Act
+            var response = await Client.GetAsync(
+                "http://localhost/ApiExplorerResponseTypeWithAttribute/" + action);
+
+            var body = await response.Content.ReadAsStringAsync();
+            var result = JsonConvert.DeserializeObject<List<ApiExplorerData>>(body);
+
+            // Assert
+            var description = Assert.Single(result);
+            var responseType = Assert.Single(description.SupportedResponseTypes);
+            Assert.Equal(typeof(void).FullName, responseType.ResponseType);
+            Assert.Equal(204, responseType.StatusCode);
+            Assert.Empty(responseType.ResponseFormats);
+        }
+
+        [Theory]
         [InlineData("GetVoid")]
         [InlineData("GetTask")]
-        public async Task ApiExplorer_ResponseType_VoidWithoutAttribute(string action)
+        public async Task ApiExplorer_ResponseType_VoidWithoutAttributeDefaultStatusCode(string action)
         {
             // Arrange & Act
             var response = await Client.GetAsync(
@@ -409,7 +454,7 @@ namespace Microsoft.AspNetCore.Mvc.FunctionalTests
             var description = Assert.Single(result);
             var responseType = Assert.Single(description.SupportedResponseTypes);
             Assert.Equal(typeof(void).FullName, responseType.ResponseType);
-            Assert.Equal(204, responseType.StatusCode);
+            Assert.Equal(200, responseType.StatusCode);
             Assert.Empty(responseType.ResponseFormats);
         }
 
@@ -436,6 +481,7 @@ namespace Microsoft.AspNetCore.Mvc.FunctionalTests
 
         [Theory]
         [InlineData("GetProduct", "ApiExplorerWebSite.Product")]
+        [InlineData("GetActionResultProduct", "ApiExplorerWebSite.Product")]
         [InlineData("GetInt", "System.Int32")]
         [InlineData("GetTaskOfProduct", "ApiExplorerWebSite.Product")]
         [InlineData("GetTaskOfInt", "System.Int32")]
@@ -528,7 +574,7 @@ namespace Microsoft.AspNetCore.Mvc.FunctionalTests
         {
             // Arrange
             var type1 = typeof(ApiExplorerWebSite.Product).FullName;
-            var type2 = typeof(ModelStateDictionary).FullName;
+            var type2 = typeof(SerializableError).FullName;
             var expectedMediaTypes = new[] { "application/json", "text/json", "application/xml", "text/xml" };
 
             // Act
@@ -560,7 +606,7 @@ namespace Microsoft.AspNetCore.Mvc.FunctionalTests
         {
             // Arrange
             var type1 = typeof(ApiExplorerWebSite.Product).FullName;
-            var type2 = typeof(ModelStateDictionary).FullName;
+            var type2 = typeof(SerializableError).FullName;
             var expectedMediaTypes = new[] { "text/xml" };
 
             // Act
@@ -592,7 +638,7 @@ namespace Microsoft.AspNetCore.Mvc.FunctionalTests
         {
             // Arrange
             var type1 = typeof(ApiExplorerWebSite.Product).FullName;
-            var type2 = typeof(ModelStateDictionary).FullName;
+            var type2 = typeof(SerializableError).FullName;
             var expectedMediaTypes = new[] { "application/json", "text/json", "application/xml", "text/xml" };
 
             // Act
@@ -624,7 +670,7 @@ namespace Microsoft.AspNetCore.Mvc.FunctionalTests
         {
             // Arrange
             var type1 = typeof(ApiExplorerWebSite.Product).FullName;
-            var type2 = typeof(ModelStateDictionary).FullName;
+            var type2 = typeof(SerializableError).FullName;
             var expectedMediaTypes = new[] { "text/xml" };
 
             // Act
@@ -666,7 +712,6 @@ namespace Microsoft.AspNetCore.Mvc.FunctionalTests
 
             // Assert
             var description = Assert.Single(result);
-            Assert.Equal(2, description.SupportedResponseTypes.Count);
 
             Assert.Collection(
                 description.SupportedResponseTypes.OrderBy(responseType => responseType.StatusCode),
@@ -704,7 +749,6 @@ namespace Microsoft.AspNetCore.Mvc.FunctionalTests
 
             // Assert
             var description = Assert.Single(result);
-            Assert.Equal(2, description.SupportedResponseTypes.Count);
 
             Assert.Collection(
                 description.SupportedResponseTypes.OrderBy(responseType => responseType.StatusCode),
@@ -775,9 +819,38 @@ namespace Microsoft.AspNetCore.Mvc.FunctionalTests
         }
 
         [Fact]
-        public async Task ApiExplorer_ResponseContentType_NoMatch()
+        public async Task ApiExplorer_ResponseContentType_WildcardMatch()
         {
             // Arrange & Act
+            var response = await Client.GetAsync("http://localhost/ApiExplorerResponseContentType/WildcardMatch");
+
+            var body = await response.Content.ReadAsStringAsync();
+            var result = JsonConvert.DeserializeObject<List<ApiExplorerData>>(body);
+
+            // Assert
+            var description = Assert.Single(result);
+            var responseType = Assert.Single(description.SupportedResponseTypes);
+            Assert.Collection(
+                responseType.ResponseFormats,
+                responseFormat =>
+                {
+                    Assert.Equal("application/hal+custom", responseFormat.MediaType);
+                    Assert.Null(responseFormat.FormatterType);
+                },
+                responseFormat =>
+                {
+                    Assert.Equal("application/hal+json", responseFormat.MediaType);
+                    Assert.Equal(typeof(JsonOutputFormatter).FullName, responseFormat.FormatterType);
+                });
+        }
+
+        [Fact]
+        public async Task ApiExplorer_ResponseContentType_NoMatch()
+        {
+            // Arrange
+            var expectedMediaTypes = new[] { "application/custom", "text/hal+bson" };
+
+            // Act
             var response = await Client.GetAsync("http://localhost/ApiExplorerResponseContentType/NoMatch");
 
             var body = await response.Content.ReadAsStringAsync();
@@ -786,7 +859,11 @@ namespace Microsoft.AspNetCore.Mvc.FunctionalTests
             // Assert
             var description = Assert.Single(result);
             var responseType = Assert.Single(description.SupportedResponseTypes);
-            Assert.Empty(responseType.ResponseFormats);
+
+
+            Assert.Equal(typeof(Product).FullName, responseType.ResponseType);
+            Assert.Equal(200, responseType.StatusCode);
+            Assert.Equal(expectedMediaTypes, GetSortedMediaTypes(responseType));
         }
 
         [ConditionalTheory]
@@ -956,6 +1033,434 @@ namespace Microsoft.AspNetCore.Mvc.FunctionalTests
             Assert.Equal(typeof(string).FullName, feedback.Type);
         }
 
+        [Fact]
+        public async Task ApiExplorer_Parameters_DefaultValue()
+        {
+            // Arrange & Act
+            var response = await Client.GetAsync("ApiExplorerParameters/DefaultValueParameters");
+
+            var body = await response.Content.ReadAsStringAsync();
+            var result = JsonConvert.DeserializeObject<List<ApiExplorerData>>(body);
+
+            // Assert
+            var description = Assert.Single(result);
+            var parameters = description.ParameterDescriptions;
+
+            Assert.Collection(
+                parameters,
+                parameter =>
+                {
+                    Assert.Equal("searchTerm", parameter.Name);
+                    Assert.Null(parameter.DefaultValue);
+                },
+                parameter =>
+                {
+                    Assert.Equal("top", parameter.Name);
+                    Assert.Equal("10", parameter.DefaultValue);
+                },
+                parameter =>
+                {
+                    Assert.Equal("searchDay", parameter.Name);
+                    Assert.Equal(nameof(DayOfWeek.Wednesday), parameter.DefaultValue);
+                });
+        }
+
+        [Fact]
+        public async Task ApiExplorer_Parameters_IsRequired()
+        {
+            // Arrange & Act
+            var response = await Client.GetAsync("ApiExplorerParameters/IsRequiredParameters");
+
+            var body = await response.Content.ReadAsStringAsync();
+            var result = JsonConvert.DeserializeObject<List<ApiExplorerData>>(body);
+
+            // Assert
+            var description = Assert.Single(result);
+            var parameters = description.ParameterDescriptions;
+
+            Assert.Collection(
+                parameters,
+                parameter =>
+                {
+                    Assert.Equal("requiredParam", parameter.Name);
+                    Assert.True(parameter.IsRequired);
+                },
+                parameter =>
+                {
+                    Assert.Equal("notRequiredParam", parameter.Name);
+                    Assert.False(parameter.IsRequired);
+                },
+                parameter =>
+                {
+                    Assert.Equal("Id", parameter.Name);
+                    Assert.True(parameter.IsRequired);
+                },
+                parameter =>
+                {
+                    Assert.Equal("Name", parameter.Name);
+                    Assert.False(parameter.IsRequired);
+                });
+        }
+
+        [Fact]
+        public async Task ApiExplorer_Updates_WhenActionDescriptorCollectionIsUpdated()
+        {
+            // Act - 1
+            var body = await Client.GetStringAsync("ApiExplorerReload/Index");
+            var result = JsonConvert.DeserializeObject<List<ApiExplorerData>>(body);
+
+            // Assert - 1
+            var description = Assert.Single(result);
+            Assert.Empty(description.ParameterDescriptions);
+            Assert.Equal("ApiExplorerReload/Index", description.RelativePath);
+
+            // Act - 2
+            var response = await Client.GetAsync("ApiExplorerReload/Reload");
+
+            // Assert - 2
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+            // Act - 3
+            response = await Client.GetAsync("ApiExplorerReload/Index");
+
+            // Assert - 3
+            Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+
+            // Act - 4
+            body = await Client.GetStringAsync("ApiExplorerReload/NewIndex");
+            result = JsonConvert.DeserializeObject<List<ApiExplorerData>>(body);
+
+            // Assert - 4
+            description = Assert.Single(result);
+            Assert.Empty(description.ParameterDescriptions);
+            Assert.Equal("ApiExplorerReload/NewIndex", description.RelativePath);
+        }
+
+        [Fact]
+        public async Task ApiExplorer_DoesNotListActionsSuppressedForPathMatching()
+        {
+            // Act
+            var body = await Client.GetStringAsync("ApiExplorerInboundOutbound/SuppressedForLinkGeneration");
+            var result = JsonConvert.DeserializeObject<List<ApiExplorerData>>(body);
+
+            // Assert
+            var description = Assert.Single(result);
+            Assert.Empty(description.ParameterDescriptions);
+            Assert.Equal("ApiExplorerInboundOutbound/SuppressedForLinkGeneration", description.RelativePath);
+        }
+
+        [Fact]
+        public async Task ApiBehavior_AddsMultipartFormDataConsumesConstraint_ForActionsWithFormFileParameters()
+        {
+            // Act
+            var body = await Client.GetStringAsync("ApiExplorerApiController/ActionWithFormFileCollectionParameter");
+            var result = JsonConvert.DeserializeObject<List<ApiExplorerData>>(body);
+
+            // Assert
+            var description = Assert.Single(result);
+            var requestFormat = Assert.Single(description.SupportedRequestFormats);
+            Assert.Equal("multipart/form-data", requestFormat.MediaType);
+        }
+
+        [Fact]
+        public async Task ApiBehavior_UsesContentTypeFromProducesAttribute_WhenNoFormatterSupportsIt()
+        {
+            // Arrange
+            var expectedMediaTypes = new[] { "application/pdf" };
+
+            // Act
+            var body = await Client.GetStringAsync("ApiExplorerApiController/ProducesWithUnsupportedContentType");
+            var result = JsonConvert.DeserializeObject<List<ApiExplorerData>>(body);
+
+            // Assert
+            var description = Assert.Single(result);
+            Assert.Collection(
+                description.SupportedResponseTypes.OrderBy(r => r.StatusCode),
+                responseType =>
+                {
+                    Assert.Equal(typeof(Stream).FullName, responseType.ResponseType);
+                    Assert.Equal(200, responseType.StatusCode);
+                    Assert.Equal(expectedMediaTypes, GetSortedMediaTypes(responseType));
+                });
+        }
+
+        [Fact]
+        public Task ApiConvention_ForGetMethod_ReturningModel() => ApiConvention_ForGetMethod("GetProduct");
+
+        [Fact]
+        public Task ApiConvention_ForGetMethod_ReturningTaskOfActionResultOfModel() => ApiConvention_ForGetMethod("GetTaskOfActionResultOfProduct");
+
+        private async Task ApiConvention_ForGetMethod(string action)
+        {
+            // Arrange
+            var expectedMediaTypes = new[] { "application/json", "application/xml", "text/json", "text/xml" };
+
+            // Act
+            var response = await Client.GetStringAsync(
+                $"ApiExplorerResponseTypeWithApiConventionController/{action}");
+            var result = JsonConvert.DeserializeObject<List<ApiExplorerData>>(response);
+
+            // Assert
+            var description = Assert.Single(result);
+
+            Assert.Collection(
+                description.SupportedResponseTypes.OrderBy(r => r.StatusCode),
+                responseType =>
+                {
+                    Assert.True(responseType.IsDefaultResponse);
+                },
+                responseType =>
+                {
+                    Assert.Equal(typeof(Product).FullName, responseType.ResponseType);
+                    Assert.Equal(200, responseType.StatusCode);
+                    Assert.Equal(expectedMediaTypes, GetSortedMediaTypes(responseType));
+                },
+                responseType =>
+                {
+                    Assert.Equal(typeof(ProblemDetails).FullName, responseType.ResponseType);
+                    Assert.Equal(404, responseType.StatusCode);
+                    Assert.Equal(expectedMediaTypes, GetSortedMediaTypes(responseType));
+                });
+        }
+
+        [Fact]
+        public async Task ApiConvention_ForGetMethodThatDoesNotMatchConvention()
+        {
+            // Arrange
+            var expectedMediaTypes = new[] { "application/json", "application/xml", "text/json", "text/xml" };
+
+            // Act
+            var response = await Client.GetStringAsync(
+                $"ApiExplorerResponseTypeWithApiConventionController/GetProducts");
+            var result = JsonConvert.DeserializeObject<List<ApiExplorerData>>(response);
+
+            // Assert
+            var description = Assert.Single(result);
+
+            Assert.Collection(
+                description.SupportedResponseTypes.OrderBy(r => r.StatusCode),
+                responseType =>
+                {
+                    Assert.Equal(typeof(IEnumerable<Product>).FullName, responseType.ResponseType);
+                    Assert.Equal(200, responseType.StatusCode);
+                    var actualMediaTypes = responseType.ResponseFormats.Select(r => r.MediaType).OrderBy(r => r);
+                    Assert.Equal(expectedMediaTypes, actualMediaTypes);
+                });
+        }
+
+        [Fact]
+        public async Task ApiConvention_ForMethodWithResponseTypeAttributes()
+        {
+            // Arrange
+            var expectedMediaTypes = new[] { "application/json" };
+
+            // Act
+            var response = await Client.PostAsync(
+                $"ApiExplorerResponseTypeWithApiConventionController/PostWithConventions",
+                new StringContent(string.Empty));
+            var responseBody = await response.EnsureSuccessStatusCode().Content.ReadAsStringAsync();
+            var result = JsonConvert.DeserializeObject<List<ApiExplorerData>>(responseBody);
+
+            // Assert
+            var description = Assert.Single(result);
+            Assert.Collection(
+                description.SupportedResponseTypes.OrderBy(r => r.StatusCode),
+                responseType =>
+                {
+                    Assert.Equal(typeof(void).FullName, responseType.ResponseType);
+                    Assert.Equal(202, responseType.StatusCode);
+                    Assert.Empty(responseType.ResponseFormats);
+                },
+                responseType =>
+                {
+                    Assert.Equal(typeof(ProblemDetails).FullName, responseType.ResponseType);
+                    Assert.Equal(403, responseType.StatusCode);
+                    Assert.Equal(expectedMediaTypes, GetSortedMediaTypes(responseType));
+                });
+        }
+
+        [Fact]
+        public async Task ApiConvention_ForPostMethodThatMatchesConvention()
+        {
+            // Arrange
+            var expectedMediaTypes = new[] { "application/json", "application/xml", "text/json", "text/xml" };
+
+            // Act
+            var response = await Client.PostAsync(
+                $"ApiExplorerResponseTypeWithApiConventionController/PostTaskOfProduct",
+                new StringContent(string.Empty));
+            var responseBody = await response.EnsureSuccessStatusCode().Content.ReadAsStringAsync();
+            var result = JsonConvert.DeserializeObject<List<ApiExplorerData>>(responseBody);
+
+            // Assert
+            var description = Assert.Single(result);
+            Assert.Collection(
+                description.SupportedResponseTypes.OrderBy(r => r.StatusCode),
+                responseType =>
+                {
+                    Assert.True(responseType.IsDefaultResponse);
+                },
+                responseType =>
+                {
+                    Assert.Equal(typeof(void).FullName, responseType.ResponseType);
+                    Assert.Equal(201, responseType.StatusCode);
+                    Assert.Empty(responseType.ResponseFormats);
+                },
+                responseType =>
+                {
+                    Assert.Equal(typeof(ProblemDetails).FullName, responseType.ResponseType);
+                    Assert.Equal(400, responseType.StatusCode);
+                    Assert.Equal(expectedMediaTypes, GetSortedMediaTypes(responseType));
+                });
+        }
+
+        [Fact]
+        public async Task ApiConvention_ForPostActionWithProducesAttribute()
+        {
+            // Arrange
+            var expectedMediaTypes = new[] { "application/json", "text/json", };
+
+            // Act
+            var response = await Client.PostAsync(
+                $"ApiExplorerResponseTypeWithApiConventionController/PostWithProduces",
+                new StringContent(string.Empty));
+            var responseBody = await response.EnsureSuccessStatusCode().Content.ReadAsStringAsync();
+            var result = JsonConvert.DeserializeObject<List<ApiExplorerData>>(responseBody);
+
+            // Assert
+            var description = Assert.Single(result);
+            Assert.Collection(
+                description.SupportedResponseTypes.OrderBy(r => r.StatusCode),
+                responseType =>
+                {
+                    Assert.True(responseType.IsDefaultResponse);
+                },
+                responseType =>
+                {
+                    Assert.Equal(typeof(void).FullName, responseType.ResponseType);
+                    Assert.Equal(201, responseType.StatusCode);
+                    Assert.Empty(responseType.ResponseFormats);
+                },
+                responseType =>
+                {
+                    Assert.Equal(typeof(ProblemDetails).FullName, responseType.ResponseType);
+                    Assert.Equal(400, responseType.StatusCode);
+                    Assert.Equal(expectedMediaTypes, GetSortedMediaTypes(responseType));
+                });
+        }
+
+        [Fact]
+        public async Task ApiConvention_ForPutActionThatMatchesConvention()
+        {
+            // Arrange
+            var expectedMediaTypes = new[] { "application/json", "application/xml", "text/json", "text/xml" };
+
+            // Act
+            var response = await Client.PutAsync(
+                $"ApiExplorerResponseTypeWithApiConventionController/Put",
+                new StringContent(string.Empty));
+            var responseBody = await response.EnsureSuccessStatusCode().Content.ReadAsStringAsync();
+            var result = JsonConvert.DeserializeObject<List<ApiExplorerData>>(responseBody);
+
+            // Assert
+            var description = Assert.Single(result);
+            Assert.Collection(
+                description.SupportedResponseTypes.OrderBy(r => r.StatusCode),
+                responseType =>
+                {
+                    Assert.True(responseType.IsDefaultResponse);
+                },
+                responseType =>
+                {
+                    Assert.Equal(typeof(void).FullName, responseType.ResponseType);
+                    Assert.Equal(204, responseType.StatusCode);
+                    Assert.Empty(responseType.ResponseFormats);
+                },
+                responseType =>
+                {
+                    Assert.Equal(typeof(ProblemDetails).FullName, responseType.ResponseType);
+                    Assert.Equal(400, responseType.StatusCode);
+                    Assert.Equal(expectedMediaTypes, GetSortedMediaTypes(responseType));
+                },
+                responseType =>
+                {
+                    Assert.Equal(typeof(ProblemDetails).FullName, responseType.ResponseType);
+                    Assert.Equal(404, responseType.StatusCode);
+                    Assert.Equal(expectedMediaTypes, GetSortedMediaTypes(responseType));
+                });
+        }
+
+        [Fact]
+        public async Task ApiConvention_ForDeleteActionThatMatchesConvention()
+        {
+            // Arrange
+            var expectedMediaTypes = new[] { "application/json", "application/xml", "text/json", "text/xml" };
+
+            // Act
+            var response = await Client.DeleteAsync(
+                $"ApiExplorerResponseTypeWithApiConventionController/DeleteProductAsync");
+            var responseBody = await response.EnsureSuccessStatusCode().Content.ReadAsStringAsync();
+            var result = JsonConvert.DeserializeObject<List<ApiExplorerData>>(responseBody);
+
+            // Assert
+            var description = Assert.Single(result);
+            Assert.Collection(
+                description.SupportedResponseTypes.OrderBy(r => r.StatusCode),
+                responseType =>
+                {
+                    Assert.True(responseType.IsDefaultResponse);
+                },
+                responseType =>
+                {
+                    Assert.Equal(typeof(void).FullName, responseType.ResponseType);
+                    Assert.Equal(200, responseType.StatusCode);
+                    Assert.Empty(responseType.ResponseFormats);
+                },
+                responseType =>
+                {
+                    Assert.Equal(typeof(ProblemDetails).FullName, responseType.ResponseType);
+                    Assert.Equal(400, responseType.StatusCode);
+                    Assert.Equal(expectedMediaTypes, GetSortedMediaTypes(responseType));
+                },
+                responseType =>
+                {
+                    Assert.Equal(typeof(ProblemDetails).FullName, responseType.ResponseType);
+                    Assert.Equal(404, responseType.StatusCode);
+                    Assert.Equal(expectedMediaTypes, GetSortedMediaTypes(responseType));
+                });
+        }
+
+        [Fact]
+        public async Task ApiConvention_ForActionWithApiConventionMethod()
+        {
+            // Arrange
+            var expectedMediaTypes = new[] { "application/json", "application/xml", "text/json", "text/xml" };
+
+            // Act
+            var response = await Client.PostAsync(
+                "ApiExplorerResponseTypeWithApiConventionController/PostItem",
+                new StringContent(string.Empty));
+            var responseBody = await response.EnsureSuccessStatusCode().Content.ReadAsStringAsync();
+            var result = JsonConvert.DeserializeObject<List<ApiExplorerData>>(responseBody);
+
+            // Assert
+            var description = Assert.Single(result);
+            Assert.Collection(
+                description.SupportedResponseTypes.OrderBy(r => r.StatusCode),
+                responseType =>
+                {
+                    Assert.Equal(typeof(void).FullName, responseType.ResponseType);
+                    Assert.Equal(302, responseType.StatusCode);
+                    Assert.Empty(responseType.ResponseFormats);
+                },
+                responseType =>
+                {
+                    Assert.Equal(typeof(ProblemDetails).FullName, responseType.ResponseType);
+                    Assert.Equal(409, responseType.StatusCode);
+                    Assert.Equal(expectedMediaTypes, GetSortedMediaTypes(responseType));
+                });
+        }
+
         private IEnumerable<string> GetSortedMediaTypes(ApiExplorerResponseType apiResponseType)
         {
             return apiResponseType.ResponseFormats
@@ -975,6 +1480,8 @@ namespace Microsoft.AspNetCore.Mvc.FunctionalTests
             public string RelativePath { get; set; }
 
             public List<ApiExplorerResponseType> SupportedResponseTypes { get; } = new List<ApiExplorerResponseType>();
+
+            public List<ApiExplorerRequestFormat> SupportedRequestFormats { get; } = new List<ApiExplorerRequestFormat>();
         }
 
         // Used to serialize data between client and server
@@ -987,6 +1494,10 @@ namespace Microsoft.AspNetCore.Mvc.FunctionalTests
             public string Source { get; set; }
 
             public string Type { get; set; }
+
+            public string DefaultValue { get; set; }
+
+            public bool IsRequired { get; set; }
         }
 
         // Used to serialize data between client and server
@@ -1008,9 +1519,18 @@ namespace Microsoft.AspNetCore.Mvc.FunctionalTests
             public string ResponseType { get; set; }
 
             public int StatusCode { get; set; }
+
+            public bool IsDefaultResponse { get; set; }
         }
 
         private class ApiExplorerResponseFormat
+        {
+            public string MediaType { get; set; }
+
+            public string FormatterType { get; set; }
+        }
+
+        private class ApiExplorerRequestFormat
         {
             public string MediaType { get; set; }
 

@@ -7,12 +7,13 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using System.Xml;
 using System.Xml.Serialization;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc.Formatters.Xml.Internal;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Testing;
 using Microsoft.Extensions.Primitives;
 using Microsoft.Net.Http.Headers;
-using Moq;
 using Xunit;
 
 namespace Microsoft.AspNetCore.Mvc.Formatters.Xml
@@ -66,6 +67,62 @@ namespace Microsoft.AspNetCore.Mvc.Formatters.Xml
 
             var content = new StreamReader(body).ReadToEnd();
             XmlAssert.Equal(expectedOutput, content);
+        }
+
+        public static TheoryData<bool, object, string> CanIndentOutputConditionallyData
+        {
+            get
+            {
+                var obj = new DummyClass { SampleInt = 10 };
+                var newLine = Environment.NewLine;
+                return new TheoryData<bool, object, string>()
+                {
+                    { true, obj, "<DummyClass xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" " +
+                        $"xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">{newLine}  <SampleInt>10</SampleInt>{newLine}</DummyClass>" },
+                    { false, obj, "<DummyClass xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" " +
+                        "xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\"><SampleInt>10</SampleInt></DummyClass>" }
+                };
+            }
+        }
+
+        [Theory]
+        [MemberData(nameof(CanIndentOutputConditionallyData))]
+        public async Task XmlSerializer_CanIndentOutputConditionally(bool indent, object input, string expectedOutput)
+        {
+            // Arrange
+            var formatter = new IndentingXmlSerializerOutputFormatter();
+            var outputFormatterContext = GetOutputFormatterContext(input, input.GetType());
+            outputFormatterContext.HttpContext.Request.QueryString = new QueryString("?indent=" + indent);
+
+            // Act
+            await formatter.WriteAsync(outputFormatterContext);
+
+            // Assert
+            var body = outputFormatterContext.HttpContext.Response.Body;
+            body.Position = 0;
+
+            var content = new StreamReader(body).ReadToEnd();
+            Assert.Equal(expectedOutput, content);
+        }
+
+        [Fact]
+        public async Task XmlSerializer_CanModifyNamespacesInGeneratedXml()
+        {
+            // Arrange
+            var input = new DummyClass { SampleInt = 10 };
+            var formatter = new IgnoreAmbientNamespacesXmlSerializerOutputFormatter();
+            var outputFormatterContext = GetOutputFormatterContext(input, input.GetType());
+            var expectedOutput = "<DummyClass><SampleInt>10</SampleInt></DummyClass>";
+
+            // Act
+            await formatter.WriteAsync(outputFormatterContext);
+
+            // Assert
+            var body = outputFormatterContext.HttpContext.Response.Body;
+            body.Position = 0;
+
+            var content = new StreamReader(body).ReadToEnd();
+            Assert.Equal(expectedOutput, content);
         }
 
         [Fact]
@@ -295,7 +352,7 @@ namespace Microsoft.AspNetCore.Mvc.Formatters.Xml
 
         [Theory]
         [MemberData(nameof(TypesForCanWriteResult))]
-        public void XmlSerializer_CanWriteResult(object input, Type declaredType, bool expectedOutput)
+        public void CanWriteResult_ReturnsExpectedValueForObjectType(object input, Type declaredType, bool expectedOutput)
         {
             // Arrange
             var formatter = new XmlSerializerOutputFormatter();
@@ -307,6 +364,40 @@ namespace Microsoft.AspNetCore.Mvc.Formatters.Xml
 
             // Assert
             Assert.Equal(expectedOutput, result);
+        }
+
+        [Theory]
+        [InlineData("application/xml", false, "application/xml")]
+        [InlineData("application/xml", true, "application/xml")]
+        [InlineData("application/other", false, null)]
+        [InlineData("application/other", true, null)]
+        [InlineData("application/*", false, "application/xml")]
+        [InlineData("text/*", false, "text/xml")]
+        [InlineData("custom/*", false, null)]
+        [InlineData("application/xml;v=2", false, null)]
+        [InlineData("application/xml;v=2", true, null)]
+        [InlineData("application/some.entity+xml", false, null)]
+        [InlineData("application/some.entity+xml", true, "application/some.entity+xml")]
+        [InlineData("application/some.entity+xml;v=2", true, "application/some.entity+xml;v=2")]
+        [InlineData("application/some.entity+other", true, null)]
+        public void CanWriteResult_ReturnsExpectedValueForMediaType(
+            string mediaType,
+            bool isServerDefined,
+            string expectedResult)
+        {
+            // Arrange
+            var formatter = new XmlSerializerOutputFormatter();
+            var outputFormatterContext = GetOutputFormatterContext(new object(), typeof(object));
+            outputFormatterContext.ContentType = new StringSegment(mediaType);
+            outputFormatterContext.ContentTypeIsServerDefined = isServerDefined;
+
+            // Act
+            var actualCanWriteValue = formatter.CanWriteResult(outputFormatterContext);
+
+            // Assert
+            var expectedContentType = expectedResult ?? mediaType;
+            Assert.Equal(expectedResult != null, actualCanWriteValue);
+            Assert.Equal(new StringSegment(expectedContentType), outputFormatterContext.ContentType);
         }
 
         [Fact]
@@ -355,6 +446,61 @@ namespace Microsoft.AspNetCore.Mvc.Formatters.Xml
             }
         }
 
+        public static TheoryData<XmlSerializerOutputFormatter, TestSink> LogsWhenUnableToCreateSerializerForTypeData
+        {
+            get
+            {
+                var sink1 = new TestSink();
+                var formatter1 = new XmlSerializerOutputFormatter(new TestLoggerFactory(sink1, enabled: true));
+
+                var sink2 = new TestSink();
+                var formatter2 = new XmlSerializerOutputFormatter(
+                    new XmlWriterSettings(),
+                    new TestLoggerFactory(sink2, enabled: true));
+
+                return new TheoryData<XmlSerializerOutputFormatter, TestSink>()
+                {
+                    { formatter1, sink1 },
+                    { formatter2, sink2}
+                };
+            }
+        }
+
+        [Theory]
+        [MemberData(nameof(LogsWhenUnableToCreateSerializerForTypeData))]
+        public void XmlSerializer_LogsWhenUnableToCreateSerializerForType(
+            XmlSerializerOutputFormatter formatter,
+            TestSink sink)
+        {
+            // Arrange
+            var outputFormatterContext = GetOutputFormatterContext(new Customer(10), typeof(Customer));
+
+            // Act
+            var canWriteResult = formatter.CanWriteResult(outputFormatterContext);
+
+            // Assert
+            Assert.False(canWriteResult);
+            var write = Assert.Single(sink.Writes);
+            Assert.Equal(LogLevel.Warning, write.LogLevel);
+            Assert.Equal(
+                $"An error occurred while trying to create an XmlSerializer for the type '{typeof(Customer).FullName}'.",
+                write.State.ToString());
+        }
+
+        [Fact]
+        public void XmlSerializer_DoesNotThrow_OnNoLoggerAnd_WhenUnableToCreateSerializerForType()
+        {
+            // Arrange
+            var formatter = new XmlSerializerOutputFormatter(); // no logger is being supplied here on purpose
+            var outputFormatterContext = GetOutputFormatterContext(new Customer(10), typeof(Customer));
+
+            // Act
+            var canWriteResult = formatter.CanWriteResult(outputFormatterContext);
+
+            // Assert
+            Assert.False(canWriteResult);
+        }
+
         private OutputFormatterWriteContext GetOutputFormatterContext(
             object outputValue,
             Type outputType,
@@ -369,20 +515,12 @@ namespace Microsoft.AspNetCore.Mvc.Formatters.Xml
 
         private static HttpContext GetHttpContext(string contentType)
         {
-            var request = new Mock<HttpRequest>();
-
-            var headers = new HeaderDictionary();
-            headers["Accept-Charset"] = MediaTypeHeaderValue.Parse(contentType).Charset;
-            request.Setup(r => r.ContentType).Returns(contentType);
-            request.SetupGet(r => r.Headers).Returns(headers);
-
-            var response = new Mock<HttpResponse>();
-            response.SetupGet(f => f.Body).Returns(new MemoryStream());
-
-            var httpContext = new Mock<HttpContext>();
-            httpContext.SetupGet(c => c.Request).Returns(request.Object);
-            httpContext.SetupGet(c => c.Response).Returns(response.Object);
-            return httpContext.Object;
+            var httpContext = new DefaultHttpContext();
+            var request = httpContext.Request;
+            request.Headers["Accept-Charset"] = MediaTypeHeaderValue.Parse(contentType).Charset.ToString();
+            request.ContentType = contentType;
+            httpContext.Response.Body = new MemoryStream();
+            return httpContext;
         }
 
         private class TestXmlSerializerOutputFormatter : XmlSerializerOutputFormatter
@@ -393,6 +531,42 @@ namespace Microsoft.AspNetCore.Mvc.Formatters.Xml
             {
                 createSerializerCalledCount++;
                 return base.CreateSerializer(type);
+            }
+        }
+
+        public class Customer
+        {
+            public Customer(int id)
+            {
+            }
+
+            public int MyProperty { get; set; }
+        }
+        private class IndentingXmlSerializerOutputFormatter : XmlSerializerOutputFormatter
+        {
+            public override XmlWriter CreateXmlWriter(
+                OutputFormatterWriteContext context,
+                TextWriter writer,
+                XmlWriterSettings xmlWriterSettings)
+            {
+                var request = context.HttpContext.Request;
+                if (request.Query["indent"] == "True")
+                {
+                    xmlWriterSettings.Indent = true;
+                }
+
+                return base.CreateXmlWriter(context, writer, xmlWriterSettings);
+            }
+        }
+
+        private class IgnoreAmbientNamespacesXmlSerializerOutputFormatter : XmlSerializerOutputFormatter
+        {
+            protected override void Serialize(XmlSerializer xmlSerializer, XmlWriter xmlWriter, object value)
+            {
+                var namespaces = new XmlSerializerNamespaces();
+                namespaces.Add("", "");
+
+                xmlSerializer.Serialize(xmlWriter, value, namespaces);
             }
         }
     }

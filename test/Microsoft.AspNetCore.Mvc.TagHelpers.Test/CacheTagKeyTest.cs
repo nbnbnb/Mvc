@@ -6,7 +6,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Http.Internal;
 using Microsoft.AspNetCore.Mvc.Abstractions;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.AspNetCore.Mvc.Rendering;
@@ -15,6 +14,7 @@ using Microsoft.AspNetCore.Mvc.ViewEngines;
 using Microsoft.AspNetCore.Mvc.ViewFeatures;
 using Microsoft.AspNetCore.Razor.TagHelpers;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.AspNetCore.Testing;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.WebEncoders.Testing;
 using Moq;
@@ -30,7 +30,7 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
             // Arrange
             var id = Guid.NewGuid().ToString();
             var tagHelperContext = GetTagHelperContext(id);
-            var cacheTagHelper = new CacheTagHelper(Mock.Of<IMemoryCache>(), new HtmlTestEncoder())
+            var cacheTagHelper = new CacheTagHelper(new CacheTagHelperMemoryCacheFactory(Mock.Of<IMemoryCache>()), new HtmlTestEncoder())
             {
                 ViewContext = GetViewContext()
             };
@@ -50,13 +50,13 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
             // Arrange
             var id = Guid.NewGuid().ToString();
             var tagHelperContext1 = GetTagHelperContext(id);
-            var cacheTagHelper1 = new CacheTagHelper(Mock.Of<IMemoryCache>(), new HtmlTestEncoder())
+            var cacheTagHelper1 = new CacheTagHelper(new CacheTagHelperMemoryCacheFactory(Mock.Of<IMemoryCache>()), new HtmlTestEncoder())
             {
                 ViewContext = GetViewContext()
             };
 
             var tagHelperContext2 = GetTagHelperContext(id);
-            var cacheTagHelper2 = new CacheTagHelper(Mock.Of<IMemoryCache>(), new HtmlTestEncoder())
+            var cacheTagHelper2 = new CacheTagHelper(new CacheTagHelperMemoryCacheFactory(Mock.Of<IMemoryCache>()), new HtmlTestEncoder())
             {
                 ViewContext = GetViewContext()
             };
@@ -74,13 +74,13 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
         {
             // Arrange
             var tagHelperContext1 = GetTagHelperContext("some-id");
-            var cacheTagHelper1 = new CacheTagHelper(Mock.Of<IMemoryCache>(), new HtmlTestEncoder())
+            var cacheTagHelper1 = new CacheTagHelper(new CacheTagHelperMemoryCacheFactory(Mock.Of<IMemoryCache>()), new HtmlTestEncoder())
             {
                 ViewContext = GetViewContext()
             };
 
             var tagHelperContext2 = GetTagHelperContext("some-other-id");
-            var cacheTagHelper2 = new CacheTagHelper(Mock.Of<IMemoryCache>(), new HtmlTestEncoder())
+            var cacheTagHelper2 = new CacheTagHelper(new CacheTagHelperMemoryCacheFactory(Mock.Of<IMemoryCache>()), new HtmlTestEncoder())
             {
                 ViewContext = GetViewContext()
             };
@@ -98,13 +98,13 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
         {
             // Arrange
             var tagHelperContext1 = GetTagHelperContext("some-id");
-            var cacheTagHelper1 = new CacheTagHelper(Mock.Of<IMemoryCache>(), new HtmlTestEncoder())
+            var cacheTagHelper1 = new CacheTagHelper(new CacheTagHelperMemoryCacheFactory(Mock.Of<IMemoryCache>()), new HtmlTestEncoder())
             {
                 ViewContext = GetViewContext()
             };
 
             var tagHelperContext2 = GetTagHelperContext("some-id");
-            var cacheTagHelper2 = new CacheTagHelper(Mock.Of<IMemoryCache>(), new HtmlTestEncoder())
+            var cacheTagHelper2 = new CacheTagHelper(new CacheTagHelperMemoryCacheFactory(Mock.Of<IMemoryCache>()), new HtmlTestEncoder())
             {
                 ViewContext = GetViewContext()
             };
@@ -125,13 +125,13 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
         {
             // Arrange
             var tagHelperContext1 = GetTagHelperContext("some-id");
-            var cacheTagHelper1 = new CacheTagHelper(Mock.Of<IMemoryCache>(), new HtmlTestEncoder())
+            var cacheTagHelper1 = new CacheTagHelper(new CacheTagHelperMemoryCacheFactory(Mock.Of<IMemoryCache>()), new HtmlTestEncoder())
             {
                 ViewContext = GetViewContext()
             };
 
             var tagHelperContext2 = GetTagHelperContext("some-other-id");
-            var cacheTagHelper2 = new CacheTagHelper(Mock.Of<IMemoryCache>(), new HtmlTestEncoder())
+            var cacheTagHelper2 = new CacheTagHelper(new CacheTagHelperMemoryCacheFactory(Mock.Of<IMemoryCache>()), new HtmlTestEncoder())
             {
                 ViewContext = GetViewContext()
             };
@@ -178,7 +178,7 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
         {
             // Arrange
             var tagHelperContext = GetTagHelperContext();
-            var cacheTagHelper = new CacheTagHelper(Mock.Of<IMemoryCache>(), new HtmlTestEncoder())
+            var cacheTagHelper = new CacheTagHelper(new CacheTagHelperMemoryCacheFactory(Mock.Of<IMemoryCache>()), new HtmlTestEncoder())
             {
                 ViewContext = GetViewContext(),
                 VaryBy = varyBy
@@ -207,7 +207,7 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
         {
             // Arrange
             var tagHelperContext = GetTagHelperContext();
-            var cacheTagHelper = new CacheTagHelper(Mock.Of<IMemoryCache>(), new HtmlTestEncoder())
+            var cacheTagHelper = new CacheTagHelper(new CacheTagHelperMemoryCacheFactory(Mock.Of<IMemoryCache>()), new HtmlTestEncoder())
             {
                 ViewContext = GetViewContext(),
                 VaryByCookie = varyByCookie
@@ -233,7 +233,7 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
         {
             // Arrange
             var tagHelperContext = GetTagHelperContext();
-            var cacheTagHelper = new CacheTagHelper(Mock.Of<IMemoryCache>(), new HtmlTestEncoder())
+            var cacheTagHelper = new CacheTagHelper(new CacheTagHelperMemoryCacheFactory(Mock.Of<IMemoryCache>()), new HtmlTestEncoder())
             {
                 ViewContext = GetViewContext(),
                 VaryByHeader = varyByHeader
@@ -261,7 +261,7 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
         {
             // Arrange
             var tagHelperContext = GetTagHelperContext();
-            var cacheTagHelper = new CacheTagHelper(Mock.Of<IMemoryCache>(), new HtmlTestEncoder())
+            var cacheTagHelper = new CacheTagHelper(new CacheTagHelperMemoryCacheFactory(Mock.Of<IMemoryCache>()), new HtmlTestEncoder())
             {
                 ViewContext = GetViewContext(),
                 VaryByQuery = varyByQuery
@@ -287,7 +287,7 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
         {
             // Arrange
             var tagHelperContext = GetTagHelperContext();
-            var cacheTagHelper = new CacheTagHelper(Mock.Of<IMemoryCache>(), new HtmlTestEncoder())
+            var cacheTagHelper = new CacheTagHelper(new CacheTagHelperMemoryCacheFactory(Mock.Of<IMemoryCache>()), new HtmlTestEncoder())
             {
                 ViewContext = GetViewContext(),
                 VaryByRoute = varyByRoute
@@ -304,12 +304,37 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
         }
 
         [Fact]
+        [ReplaceCulture("de-CH", "de-CH")]
+        public void GenerateKey_UsesVaryByRoute_UsesInvariantCulture()
+        {
+            // Arrange
+            var tagHelperContext = GetTagHelperContext();
+            var cacheTagHelper = new CacheTagHelper(
+                new CacheTagHelperMemoryCacheFactory(Mock.Of<IMemoryCache>()), new HtmlTestEncoder())
+            {
+                ViewContext = GetViewContext(),
+                VaryByRoute = "Category",
+            };
+            cacheTagHelper.ViewContext.RouteData.Values["id"] = 4;
+            cacheTagHelper.ViewContext.RouteData.Values["category"] =
+                new DateTimeOffset(2018, 10, 31, 7, 37, 38, TimeSpan.FromHours(-7));
+            var expected = "CacheTagHelper||testid||VaryByRoute(Category||10/31/2018 07:37:38 -07:00)";
+
+            // Act
+            var cacheTagKey = new CacheTagKey(cacheTagHelper, tagHelperContext);
+            var key = cacheTagKey.GenerateKey();
+
+            // Assert
+            Assert.Equal(expected, key);
+        }
+
+        [Fact]
         public void GenerateKey_UsesVaryByUser_WhenUserIsNotAuthenticated()
         {
             // Arrange
             var expected = "CacheTagHelper||testid||VaryByUser||";
             var tagHelperContext = GetTagHelperContext();
-            var cacheTagHelper = new CacheTagHelper(Mock.Of<IMemoryCache>(), new HtmlTestEncoder())
+            var cacheTagHelper = new CacheTagHelper(new CacheTagHelperMemoryCacheFactory(Mock.Of<IMemoryCache>()), new HtmlTestEncoder())
             {
                 ViewContext = GetViewContext(),
                 VaryByUser = true
@@ -329,7 +354,7 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
             // Arrange
             var expected = "CacheTagHelper||testid||VaryByUser||test_name";
             var tagHelperContext = GetTagHelperContext();
-            var cacheTagHelper = new CacheTagHelper(Mock.Of<IMemoryCache>(), new HtmlTestEncoder())
+            var cacheTagHelper = new CacheTagHelper(new CacheTagHelperMemoryCacheFactory(Mock.Of<IMemoryCache>()), new HtmlTestEncoder())
             {
                 ViewContext = GetViewContext(),
                 VaryByUser = true
@@ -346,13 +371,34 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
         }
 
         [Fact]
+        [ReplaceCulture("fr-FR", "es-ES")]
+        public void GenerateKey_UsesCultureAndUICultureName_IfVaryByCulture_IsSet()
+        {
+            // Arrange
+            var expected = "CacheTagHelper||testid||VaryByCulture||fr-FR||es-ES";
+            var tagHelperContext = GetTagHelperContext();
+            var cacheTagHelper = new CacheTagHelper(new CacheTagHelperMemoryCacheFactory(Mock.Of<IMemoryCache>()), new HtmlTestEncoder())
+            {
+                ViewContext = GetViewContext(),
+                VaryByCulture = true
+            };
+
+            // Act
+            var cacheTagKey = new CacheTagKey(cacheTagHelper, tagHelperContext);
+            var key = cacheTagKey.GenerateKey();
+
+            // Assert
+            Assert.Equal(expected, key);
+        }
+
+        [Fact]
         public void GenerateKey_WithMultipleVaryByOptions_CreatesCombinedKey()
         {
             // Arrange
             var expected = "CacheTagHelper||testid||VaryBy||custom-value||" +
                 "VaryByHeader(content-type||text/html)||VaryByUser||someuser";
             var tagHelperContext = GetTagHelperContext();
-            var cacheTagHelper = new CacheTagHelper(Mock.Of<IMemoryCache>(), new HtmlTestEncoder())
+            var cacheTagHelper = new CacheTagHelper(new CacheTagHelperMemoryCacheFactory(Mock.Of<IMemoryCache>()), new HtmlTestEncoder())
             {
                 ViewContext = GetViewContext(),
                 VaryByUser = true,
@@ -370,21 +416,144 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
             // Assert
             Assert.Equal(expected, key);
         }
-        
+
+        [Fact]
+        [ReplaceCulture("zh", "zh-Hans")]
+        public void GenerateKey_WithVaryByCulture_ComposesWithOtherOptions()
+        {
+            // Arrange
+            var expected = "CacheTagHelper||testid||VaryBy||custom-value||" +
+                "VaryByHeader(content-type||text/html)||VaryByCulture||zh||zh-Hans";
+            var tagHelperContext = GetTagHelperContext();
+            var cacheTagHelper = new CacheTagHelper(new CacheTagHelperMemoryCacheFactory(Mock.Of<IMemoryCache>()), new HtmlTestEncoder())
+            {
+                ViewContext = GetViewContext(),
+                VaryByCulture = true,
+                VaryByHeader = "content-type",
+                VaryBy = "custom-value"
+            };
+            cacheTagHelper.ViewContext.HttpContext.Request.Headers["Content-Type"] = "text/html";
+
+            // Act
+            var cacheTagKey = new CacheTagKey(cacheTagHelper, tagHelperContext);
+            var key = cacheTagKey.GenerateKey();
+
+            // Assert
+            Assert.Equal(expected, key);
+        }
+
+        [Fact]
+        public void Equality_ReturnsFalse_WhenVaryByCultureIsTrue_AndCultureIsDifferent()
+        {
+            // Arrange
+            var tagHelperContext = GetTagHelperContext();
+            var cacheTagHelper = new CacheTagHelper(new CacheTagHelperMemoryCacheFactory(Mock.Of<IMemoryCache>()), new HtmlTestEncoder())
+            {
+                ViewContext = GetViewContext(),
+                VaryByCulture = true,
+            };
+
+            // Act
+            CacheTagKey key1;
+            using (new CultureReplacer("fr-FR"))
+            {
+                key1 = new CacheTagKey(cacheTagHelper, tagHelperContext);
+            }
+
+            CacheTagKey key2;
+            using (new CultureReplacer("es-ES"))
+            {
+                key2 = new CacheTagKey(cacheTagHelper, tagHelperContext);
+            }
+            var equals = key1.Equals(key2);
+            var hashCode1 = key1.GetHashCode();
+            var hashCode2 = key2.GetHashCode();
+
+            // Assert
+            Assert.False(equals, "CacheTagKeys must not be equal");
+            Assert.NotEqual(hashCode1, hashCode2);
+        }
+
+        [Fact]
+        public void Equality_ReturnsFalse_WhenVaryByCultureIsTrue_AndUICultureIsDifferent()
+        {
+            // Arrange
+            var tagHelperContext = GetTagHelperContext();
+            var cacheTagHelper = new CacheTagHelper(new CacheTagHelperMemoryCacheFactory(Mock.Of<IMemoryCache>()), new HtmlTestEncoder())
+            {
+                ViewContext = GetViewContext(),
+                VaryByCulture = true,
+            };
+
+            // Act
+            CacheTagKey key1;
+            using (new CultureReplacer("fr", "fr-FR"))
+            {
+                key1 = new CacheTagKey(cacheTagHelper, tagHelperContext);
+            }
+
+            CacheTagKey key2;
+            using (new CultureReplacer("fr", "fr-CA"))
+            {
+                key2 = new CacheTagKey(cacheTagHelper, tagHelperContext);
+            }
+            var equals = key1.Equals(key2);
+            var hashCode1 = key1.GetHashCode();
+            var hashCode2 = key2.GetHashCode();
+
+            // Assert
+            Assert.False(equals, "CacheTagKeys must not be equal");
+            Assert.NotEqual(hashCode1, hashCode2);
+        }
+
+        [Fact]
+        public void Equality_ReturnsTrue_WhenVaryByCultureIsTrue_AndCultureIsSame()
+        {
+            // Arrange
+            var tagHelperContext = GetTagHelperContext();
+            var cacheTagHelper = new CacheTagHelper(new CacheTagHelperMemoryCacheFactory(Mock.Of<IMemoryCache>()), new HtmlTestEncoder())
+            {
+                ViewContext = GetViewContext(),
+                VaryByCulture = true,
+            };
+
+            // Act
+            CacheTagKey key1;
+            CacheTagKey key2;
+            using (new CultureReplacer("fr-FR", "fr-FR"))
+            {
+                key1 = new CacheTagKey(cacheTagHelper, tagHelperContext);
+            }
+
+            using (new CultureReplacer("fr-fr", "fr-fr"))
+            {
+                key2 = new CacheTagKey(cacheTagHelper, tagHelperContext);
+            }
+
+            var equals = key1.Equals(key2);
+            var hashCode1 = key1.GetHashCode();
+            var hashCode2 = key2.GetHashCode();
+
+            // Assert
+            Assert.True(equals, "CacheTagKeys must be equal");
+            Assert.Equal(hashCode1, hashCode2);
+        }
+
         private static ViewContext GetViewContext()
         {
             var actionContext = new ActionContext(new DefaultHttpContext(), new RouteData(), new ActionDescriptor());
             return new ViewContext(actionContext,
-                                   Mock.Of<IView>(),
-                                   new ViewDataDictionary(new EmptyModelMetadataProvider()),
-                                   Mock.Of<ITempDataDictionary>(),
-                                   TextWriter.Null,
-                                   new HtmlHelperOptions());
+                Mock.Of<IView>(),
+                new ViewDataDictionary(new EmptyModelMetadataProvider(), new ModelStateDictionary()),
+                Mock.Of<ITempDataDictionary>(),
+                TextWriter.Null,
+                new HtmlHelperOptions());
         }
 
         private static TagHelperContext GetTagHelperContext(string id = "testid")
         {
             return new TagHelperContext(
+                tagName: "test",
                 allAttributes: new TagHelperAttributeList(),
                 items: new Dictionary<object, object>(),
                 uniqueId: id);

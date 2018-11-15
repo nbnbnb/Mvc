@@ -6,7 +6,6 @@ using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Html;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
-using Microsoft.AspNetCore.Mvc.TestCommon;
 using Microsoft.AspNetCore.Mvc.ViewEngines;
 using Microsoft.AspNetCore.Mvc.ViewFeatures;
 using Moq;
@@ -152,6 +151,7 @@ namespace Microsoft.AspNetCore.Mvc.Rendering
                     { helper => helper.RenderPartial("test"), null, null },
                     { helper => helper.RenderPartial("test", model), model, null },
                     { helper => helper.RenderPartial("test", viewData), null, viewData },
+                    { helper => helper.RenderPartial("test", model, viewData), model, viewData },
                 };
             }
         }

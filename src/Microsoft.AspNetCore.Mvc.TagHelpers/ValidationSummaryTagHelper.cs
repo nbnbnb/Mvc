@@ -28,13 +28,7 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
         }
 
         /// <inheritdoc />
-        public override int Order
-        {
-            get
-            {
-                return -1000;
-            }
-        }
+        public override int Order => -1000;
 
         [HtmlAttributeNotBound]
         [ViewContext]
@@ -54,10 +48,7 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
         [HtmlAttributeName(ValidationSummaryAttributeName)]
         public ValidationSummary ValidationSummary
         {
-            get
-            {
-                return _validationSummary;
-            }
+            get => _validationSummary;
             set
             {
                 switch (value)
@@ -104,9 +95,16 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
                 message: null,
                 headerTag: null,
                 htmlAttributes: null);
-            if (tagBuilder != null)
+            if (tagBuilder == null)
             {
-                output.MergeAttributes(tagBuilder);
+                // The generator determined no element was necessary.
+                output.SuppressOutput();
+                return;
+            }
+
+            output.MergeAttributes(tagBuilder);
+            if (tagBuilder.HasInnerHtml)
+            {
                 output.PostContent.AppendHtml(tagBuilder.InnerHtml);
             }
         }

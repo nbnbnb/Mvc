@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.Routing.Constraints;
 using Microsoft.Extensions.DependencyInjection;
@@ -32,16 +33,16 @@ namespace Microsoft.AspNetCore.Builder
                 route.Constraints.OrderBy(kvp => kvp.Key),
                 kvp =>
                 {
-                    Assert.Equal(kvp.Key, "area");
-                    Assert.IsType<RegexRouteConstraint>(kvp.Value);
+                    Assert.Equal("area", kvp.Key);
+                    Assert.IsType<StringRouteConstraint>(kvp.Value);
                 });
             Assert.Empty(route.DataTokens);
             Assert.Collection(
                 route.Defaults.OrderBy(kvp => kvp.Key),
                 kvp =>
                 {
-                    Assert.Equal(kvp.Key, "area");
-                    Assert.Equal(kvp.Value, "admin");
+                    Assert.Equal("area", kvp.Key);
+                    Assert.Equal("admin", kvp.Value);
                 });
         }
 
@@ -67,21 +68,21 @@ namespace Microsoft.AspNetCore.Builder
                 route.Constraints.OrderBy(kvp => kvp.Key),
                 kvp =>
                 {
-                    Assert.Equal(kvp.Key, "area");
-                    Assert.IsType<RegexRouteConstraint>(kvp.Value);
+                    Assert.Equal("area", kvp.Key);
+                    Assert.IsType<StringRouteConstraint>(kvp.Value);
                 });
             Assert.Empty(route.DataTokens);
             Assert.Collection(
                 route.Defaults.OrderBy(kvp => kvp.Key),
                 kvp =>
                 {
-                    Assert.Equal(kvp.Key, "action");
-                    Assert.Equal(kvp.Value, "Home");
+                    Assert.Equal("action", kvp.Key);
+                    Assert.Equal("Home", kvp.Value);
                 },
                 kvp =>
                 {
-                    Assert.Equal(kvp.Key, "area");
-                    Assert.Equal(kvp.Value, "admin");
+                    Assert.Equal("area", kvp.Key);
+                    Assert.Equal("admin", kvp.Value);
                 });
         }
 
@@ -108,12 +109,12 @@ namespace Microsoft.AspNetCore.Builder
                 route.Constraints.OrderBy(kvp => kvp.Key),
                 kvp =>
                 {
-                    Assert.Equal(kvp.Key, "area");
-                    Assert.IsType<RegexRouteConstraint>(kvp.Value);
+                    Assert.Equal("area", kvp.Key);
+                    Assert.IsType<StringRouteConstraint>(kvp.Value);
                 },
                 kvp =>
                 {
-                    Assert.Equal(kvp.Key, "id");
+                    Assert.Equal("id", kvp.Key);
                     Assert.IsType<IntRouteConstraint>(kvp.Value);
                 });
             Assert.Empty(route.DataTokens);
@@ -121,13 +122,13 @@ namespace Microsoft.AspNetCore.Builder
                 route.Defaults.OrderBy(kvp => kvp.Key),
                 kvp =>
                 {
-                    Assert.Equal(kvp.Key, "action");
-                    Assert.Equal(kvp.Value, "Home");
+                    Assert.Equal("action", kvp.Key);
+                    Assert.Equal("Home", kvp.Value);
                 },
                 kvp =>
                 {
-                    Assert.Equal(kvp.Key, "area");
-                    Assert.Equal(kvp.Value, "admin");
+                    Assert.Equal("area", kvp.Key);
+                    Assert.Equal("admin", kvp.Value);
                 });
         }
 
@@ -155,37 +156,37 @@ namespace Microsoft.AspNetCore.Builder
                 route.Constraints.OrderBy(kvp => kvp.Key),
                 kvp =>
                 {
-                    Assert.Equal(kvp.Key, "area");
-                    Assert.IsType<RegexRouteConstraint>(kvp.Value);
+                    Assert.Equal("area", kvp.Key);
+                    Assert.IsType<StringRouteConstraint>(kvp.Value);
                 },
                 kvp =>
                 {
-                    Assert.Equal(kvp.Key, "id");
+                    Assert.Equal("id", kvp.Key);
                     Assert.IsType<IntRouteConstraint>(kvp.Value);
                 });
             Assert.Collection(
                 route.DataTokens.OrderBy(kvp => kvp.Key),
                 kvp =>
                 {
-                    Assert.Equal(kvp.Key, "some_token");
-                    Assert.Equal(kvp.Value, "hello");
+                    Assert.Equal("some_token", kvp.Key);
+                    Assert.Equal("hello", kvp.Value);
                 });
             Assert.Collection(
                 route.Defaults.OrderBy(kvp => kvp.Key),
                 kvp =>
                 {
-                    Assert.Equal(kvp.Key, "action");
-                    Assert.Equal(kvp.Value, "Home");
+                    Assert.Equal("action", kvp.Key);
+                    Assert.Equal("Home", kvp.Value);
                 },
                 kvp =>
                 {
-                    Assert.Equal(kvp.Key, "area");
-                    Assert.Equal(kvp.Value, "admin");
+                    Assert.Equal("area", kvp.Key);
+                    Assert.Equal("admin", kvp.Value);
                 });
         }
 
         [Fact]
-        public void MapAreaRoute_ReplacesValuesForArea()
+        public void MapAreaRoute_DoesNotReplaceValuesForAreaIfAlreadyPresentInConstraintsOrDefaults()
         {
             // Arrange
             var builder = CreateRouteBuilder();
@@ -208,22 +209,64 @@ namespace Microsoft.AspNetCore.Builder
                 route.Constraints.OrderBy(kvp => kvp.Key),
                 kvp =>
                 {
-                    Assert.Equal(kvp.Key, "area");
-                    Assert.IsType<RegexRouteConstraint>(kvp.Value);
+                    Assert.Equal("area", kvp.Key);
+                    Assert.IsType<IntRouteConstraint>(kvp.Value);
                 });
             Assert.Collection(
                 route.DataTokens.OrderBy(kvp => kvp.Key),
                 kvp =>
                 {
-                    Assert.Equal(kvp.Key, "some_token");
-                    Assert.Equal(kvp.Value, "hello");
+                    Assert.Equal("some_token", kvp.Key);
+                    Assert.Equal("hello", kvp.Value);
                 });
             Assert.Collection(
                 route.Defaults.OrderBy(kvp => kvp.Key),
                 kvp =>
                 {
-                    Assert.Equal(kvp.Key, "area");
-                    Assert.Equal(kvp.Value, "admin");
+                    Assert.Equal("area", kvp.Key);
+                    Assert.Equal("Home", kvp.Value);
+                });
+        }
+
+        [Fact]
+        public void MapAreaRoute_UsesPassedInAreaNameAsIs()
+        {
+            // Arrange
+            var builder = CreateRouteBuilder();
+            var areaName = "user.admin";
+
+            // Act
+            builder.MapAreaRoute(name: null, areaName: areaName, template: "site/Admin/");
+
+            // Assert
+            var route = Assert.IsType<Route>((Assert.Single(builder.Routes)));
+
+            Assert.Null(route.Name);
+            Assert.Equal("site/Admin/", route.RouteTemplate);
+            Assert.Collection(
+                route.Constraints.OrderBy(kvp => kvp.Key),
+                kvp =>
+                {
+                    Assert.Equal("area", kvp.Key);
+                    Assert.IsType<StringRouteConstraint>(kvp.Value);
+
+                    var values = new RouteValueDictionary(new { area = areaName });
+                    var match = kvp.Value.Match(
+                        new DefaultHttpContext(),
+                        route: new Mock<IRouter>().Object,
+                        routeKey: kvp.Key,
+                        values: values,
+                        routeDirection: RouteDirection.UrlGeneration);
+
+                    Assert.True(match);
+                });
+            Assert.Empty(route.DataTokens);
+            Assert.Collection(
+                route.Defaults.OrderBy(kvp => kvp.Key),
+                kvp =>
+                {
+                    Assert.Equal("area", kvp.Key);
+                    Assert.Equal(kvp.Value, areaName);
                 });
         }
 

@@ -3,7 +3,6 @@
 
 using System;
 using System.Diagnostics;
-using Microsoft.AspNetCore.Mvc.ViewFeatures.Internal;
 using Microsoft.Extensions.Logging;
 
 namespace Microsoft.AspNetCore.Mvc.ViewComponents

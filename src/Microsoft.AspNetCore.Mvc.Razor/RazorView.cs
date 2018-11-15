@@ -9,7 +9,7 @@ using System.Text.Encodings.Web;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc.Rendering;
 using Microsoft.AspNetCore.Mvc.ViewEngines;
-using Microsoft.AspNetCore.Mvc.ViewFeatures.Internal;
+using Microsoft.AspNetCore.Mvc.ViewFeatures.Buffers;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Microsoft.AspNetCore.Mvc.Razor
@@ -23,6 +23,7 @@ namespace Microsoft.AspNetCore.Mvc.Razor
         private readonly IRazorViewEngine _viewEngine;
         private readonly IRazorPageActivator _pageActivator;
         private readonly HtmlEncoder _htmlEncoder;
+        private readonly DiagnosticSource _diagnosticSource;
         private IViewBufferScope _bufferScope;
 
         /// <summary>
@@ -34,12 +35,14 @@ namespace Microsoft.AspNetCore.Mvc.Razor
         /// </param>
         /// <param name="razorPage">The <see cref="IRazorPage"/> instance to execute.</param>
         /// <param name="htmlEncoder">The HTML encoder.</param>
+        /// <param name="diagnosticSource">The <see cref="DiagnosticSource"/>.</param>
         public RazorView(
             IRazorViewEngine viewEngine,
             IRazorPageActivator pageActivator,
             IReadOnlyList<IRazorPage> viewStartPages,
             IRazorPage razorPage,
-            HtmlEncoder htmlEncoder)
+            HtmlEncoder htmlEncoder,
+            DiagnosticSource diagnosticSource)
         {
             if (viewEngine == null)
             {
@@ -66,18 +69,21 @@ namespace Microsoft.AspNetCore.Mvc.Razor
                 throw new ArgumentNullException(nameof(htmlEncoder));
             }
 
+            if (diagnosticSource == null)
+            {
+                throw new ArgumentNullException(nameof(diagnosticSource));
+            }
+
             _viewEngine = viewEngine;
             _pageActivator = pageActivator;
             ViewStartPages = viewStartPages;
             RazorPage = razorPage;
             _htmlEncoder = htmlEncoder;
+            _diagnosticSource = diagnosticSource;
         }
 
         /// <inheritdoc />
-        public string Path
-        {
-            get { return RazorPage.Path; }
-        }
+        public string Path => RazorPage.Path;
 
         /// <summary>
         /// Gets <see cref="IRazorPage"/> instance that the views executes on.
@@ -88,6 +94,8 @@ namespace Microsoft.AspNetCore.Mvc.Razor
         /// Gets the sequence of _ViewStart <see cref="IRazorPage"/> instances that are executed by this view.
         /// </summary>
         public IReadOnlyList<IRazorPage> ViewStartPages { get; }
+
+        internal Action<IRazorPage, ViewContext> OnAfterPageActivated { get; set; }
 
         /// <inheritdoc />
         public virtual async Task RenderAsync(ViewContext context)
@@ -155,11 +163,23 @@ namespace Microsoft.AspNetCore.Mvc.Razor
             }
         }
 
-        private Task RenderPageCoreAsync(IRazorPage page, ViewContext context)
+        private async Task RenderPageCoreAsync(IRazorPage page, ViewContext context)
         {
             page.ViewContext = context;
             _pageActivator.Activate(page, context);
-            return page.ExecuteAsync();
+
+            OnAfterPageActivated?.Invoke(page, context);
+
+            _diagnosticSource.BeforeViewPage(page, context);
+
+            try
+            {
+                await page.ExecuteAsync();
+            }
+            finally
+            {
+                _diagnosticSource.AfterViewPage(page, context);
+            }
         }
 
         private async Task RenderViewStartsAsync(ViewContext context)
@@ -273,7 +293,6 @@ namespace Microsoft.AspNetCore.Mvc.Razor
                 {
                     // This means we're writing to another buffer. Use MoveTo to combine them.
                     bodyWriter.Buffer.MoveTo(viewBufferTextWriter.Buffer);
-                    return;
                 }
             }
         }

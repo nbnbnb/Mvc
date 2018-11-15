@@ -4,7 +4,6 @@
 using System;
 using System.Globalization;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Mvc.Internal;
 
 namespace Microsoft.AspNetCore.Mvc.ModelBinding
 {
@@ -22,14 +21,18 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
                 throw new ArgumentNullException(nameof(context));
             }
 
-            var valueProvider = new QueryStringValueProvider(
-                BindingSource.Query,
-                context.ActionContext.HttpContext.Request.Query,
-                CultureInfo.InvariantCulture);
+            var query = context.ActionContext.HttpContext.Request.Query;
+            if (query != null && query.Count > 0)
+            {
+                var valueProvider = new QueryStringValueProvider(
+                    BindingSource.Query,
+                    query,
+                    CultureInfo.InvariantCulture);
 
-            context.ValueProviders.Add(valueProvider);
+                context.ValueProviders.Add(valueProvider);
+            }
 
-            return TaskCache.CompletedTask;
+            return Task.CompletedTask;
         }
     }
 }

@@ -5,7 +5,6 @@ using System;
 using Microsoft.AspNetCore.Cors.Infrastructure;
 using Microsoft.AspNetCore.Mvc.ApplicationModels;
 using Microsoft.AspNetCore.Mvc.Cors;
-using Microsoft.AspNetCore.Mvc.Cors.Internal;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Microsoft.Extensions.DependencyInjection
@@ -38,12 +37,8 @@ namespace Microsoft.Extensions.DependencyInjection
             }
 
             AddCorsServices(builder.Services);
-
-            if (setupAction != null)
-            {
-                builder.Services.Configure(setupAction);
-            }
-
+            builder.Services.Configure(setupAction);
+            
             return builder;
         }
 

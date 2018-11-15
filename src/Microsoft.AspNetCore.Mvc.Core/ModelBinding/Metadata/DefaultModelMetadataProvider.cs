@@ -4,15 +4,17 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Reflection;
 using Microsoft.Extensions.Internal;
+using Microsoft.Extensions.Options;
 
 namespace Microsoft.AspNetCore.Mvc.ModelBinding.Metadata
 {
     /// <summary>
     /// A default implementation of <see cref="IModelMetadataProvider"/> based on reflection.
     /// </summary>
-    public class DefaultModelMetadataProvider : IModelMetadataProvider
+    public class DefaultModelMetadataProvider : ModelMetadataProvider
     {
         private readonly TypeCache _typeCache = new TypeCache();
         private readonly Func<ModelMetadataIdentity, ModelMetadataCacheEntry> _cacheEntryFactory;
@@ -23,11 +25,35 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Metadata
         /// </summary>
         /// <param name="detailsProvider">The <see cref="ICompositeMetadataDetailsProvider"/>.</param>
         public DefaultModelMetadataProvider(ICompositeMetadataDetailsProvider detailsProvider)
+            : this(detailsProvider, new DefaultModelBindingMessageProvider())
         {
+        }
+
+        /// <summary>
+        /// Creates a new <see cref="DefaultModelMetadataProvider"/>.
+        /// </summary>
+        /// <param name="detailsProvider">The <see cref="ICompositeMetadataDetailsProvider"/>.</param>
+        /// <param name="optionsAccessor">The accessor for <see cref="MvcOptions"/>.</param>
+        public DefaultModelMetadataProvider(
+            ICompositeMetadataDetailsProvider detailsProvider,
+            IOptions<MvcOptions> optionsAccessor)
+            : this(detailsProvider, GetMessageProvider(optionsAccessor))
+        {
+        }
+
+        private DefaultModelMetadataProvider(
+            ICompositeMetadataDetailsProvider detailsProvider,
+            DefaultModelBindingMessageProvider modelBindingMessageProvider)
+        {
+            if (detailsProvider == null)
+            {
+                throw new ArgumentNullException(nameof(detailsProvider));
+            }
+
             DetailsProvider = detailsProvider;
+            ModelBindingMessageProvider = modelBindingMessageProvider;
 
             _cacheEntryFactory = CreateCacheEntry;
-
             _metadataCacheEntryForObjectType = GetMetadataCacheEntryForObjectType();
         }
 
@@ -36,8 +62,14 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Metadata
         /// </summary>
         protected ICompositeMetadataDetailsProvider DetailsProvider { get; }
 
+        /// <summary>
+        /// Gets the <see cref="Metadata.DefaultModelBindingMessageProvider"/>.
+        /// </summary>
+        /// <value>Same as <see cref="MvcOptions.ModelBindingMessageProvider"/> in all production scenarios.</value>
+        protected DefaultModelBindingMessageProvider ModelBindingMessageProvider { get; }
+
         /// <inheritdoc />
-        public virtual IEnumerable<ModelMetadata> GetMetadataForProperties(Type modelType)
+        public override IEnumerable<ModelMetadata> GetMetadataForProperties(Type modelType)
         {
             if (modelType == null)
             {
@@ -47,7 +79,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Metadata
             var cacheEntry = GetCacheEntry(modelType);
 
             // We're relying on a safe race-condition for Properties - take care only
-            // to set the value onces the properties are fully-initialized.
+            // to set the value once the properties are fully-initialized.
             if (cacheEntry.Details.Properties == null)
             {
                 var key = ModelMetadataIdentity.ForType(modelType);
@@ -56,6 +88,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Metadata
                 var properties = new ModelMetadata[propertyDetails.Length];
                 for (var i = 0; i < properties.Length; i++)
                 {
+                    propertyDetails[i].ContainerMetadata = cacheEntry.Metadata;
                     properties[i] = CreateModelMetadata(propertyDetails[i]);
                 }
 
@@ -66,7 +99,29 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Metadata
         }
 
         /// <inheritdoc />
-        public virtual ModelMetadata GetMetadataForType(Type modelType)
+        public override ModelMetadata GetMetadataForParameter(ParameterInfo parameter)
+            => GetMetadataForParameter(parameter, parameter?.ParameterType);
+
+        /// <inheritdoc />
+        public override ModelMetadata GetMetadataForParameter(ParameterInfo parameter, Type modelType)
+        {
+            if (parameter == null)
+            {
+                throw new ArgumentNullException(nameof(parameter));
+            }
+
+            if (modelType == null)
+            {
+                throw new ArgumentNullException(nameof(modelType));
+            }
+
+            var cacheEntry = GetCacheEntry(parameter, modelType);
+
+            return cacheEntry.Metadata;
+        }
+
+        /// <inheritdoc />
+        public override ModelMetadata GetMetadataForType(Type modelType)
         {
             if (modelType == null)
             {
@@ -76,6 +131,34 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Metadata
             var cacheEntry = GetCacheEntry(modelType);
 
             return cacheEntry.Metadata;
+        }
+
+        /// <inheritdoc />
+        public override ModelMetadata GetMetadataForProperty(PropertyInfo propertyInfo, Type modelType)
+        {
+            if (propertyInfo == null)
+            {
+                throw new ArgumentNullException(nameof(propertyInfo));
+            }
+
+            if (modelType == null)
+            {
+                throw new ArgumentNullException(nameof(modelType));
+            }
+
+            var cacheEntry = GetCacheEntry(propertyInfo, modelType);
+
+            return cacheEntry.Metadata;
+        }
+
+        private static DefaultModelBindingMessageProvider GetMessageProvider(IOptions<MvcOptions> optionsAccessor)
+        {
+            if (optionsAccessor == null)
+            {
+                throw new ArgumentNullException(nameof(optionsAccessor));
+            }
+
+            return optionsAccessor.Value.ModelBindingMessageProvider;
         }
 
         private ModelMetadataCacheEntry GetCacheEntry(Type modelType)
@@ -97,11 +180,54 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Metadata
             return cacheEntry;
         }
 
+        private ModelMetadataCacheEntry GetCacheEntry(ParameterInfo parameter, Type modelType)
+        {
+            return _typeCache.GetOrAdd(
+                ModelMetadataIdentity.ForParameter(parameter, modelType),
+                _cacheEntryFactory);
+        }
+
+        private ModelMetadataCacheEntry GetCacheEntry(PropertyInfo property, Type modelType)
+        {
+            return _typeCache.GetOrAdd(
+                ModelMetadataIdentity.ForProperty(modelType, property.Name, property.DeclaringType),
+                _cacheEntryFactory);
+        }
+
         private ModelMetadataCacheEntry CreateCacheEntry(ModelMetadataIdentity key)
         {
-            var details = CreateTypeDetails(key);
+            DefaultMetadataDetails details;
+            if (key.MetadataKind == ModelMetadataKind.Parameter)
+            {
+                details = CreateParameterDetails(key);
+            }
+            else if (key.MetadataKind == ModelMetadataKind.Property)
+            {
+                details = CreateSinglePropertyDetails(key);
+            }
+            else
+            {
+                details = CreateTypeDetails(key);
+            }
+
             var metadata = CreateModelMetadata(details);
             return new ModelMetadataCacheEntry(metadata, details);
+        }
+
+        private DefaultMetadataDetails CreateSinglePropertyDetails(ModelMetadataIdentity propertyKey)
+        {
+            var propertyHelpers = PropertyHelper.GetVisibleProperties(propertyKey.ContainerType);
+            for (var i = 0; i < propertyHelpers.Length; i++)
+            {
+                var propertyHelper = propertyHelpers[i];
+                if (propertyHelper.Name == propertyKey.Name)
+                {
+                    return CreateSinglePropertyDetails(propertyKey, propertyHelper);
+                }
+            }
+
+            Debug.Fail($"Unable to find property '{propertyKey.Name}' on type '{propertyKey.ContainerType}.");
+            return null;
         }
 
         private ModelMetadataCacheEntry GetMetadataCacheEntryForObjectType()
@@ -123,7 +249,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Metadata
         /// </remarks>
         protected virtual ModelMetadata CreateModelMetadata(DefaultMetadataDetails entry)
         {
-            return new DefaultModelMetadata(this, DetailsProvider, entry);
+            return new DefaultModelMetadata(this, DetailsProvider, entry, ModelBindingMessageProvider);
         }
 
         /// <summary>
@@ -147,33 +273,46 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Metadata
             for (var i = 0; i < propertyHelpers.Length; i++)
             {
                 var propertyHelper = propertyHelpers[i];
+
                 var propertyKey = ModelMetadataIdentity.ForProperty(
                     propertyHelper.Property.PropertyType,
                     propertyHelper.Name,
                     key.ModelType);
 
-                var attributes = ModelAttributes.GetAttributesForProperty(
-                    key.ModelType,
-                    propertyHelper.Property);
-
-                var propertyEntry = new DefaultMetadataDetails(propertyKey, attributes);
-                if (propertyHelper.Property.CanRead && propertyHelper.Property.GetMethod?.IsPublic == true)
-                {
-                    var getter = PropertyHelper.MakeNullSafeFastPropertyGetter(propertyHelper.Property);
-                    propertyEntry.PropertyGetter = getter;
-                }
-
-                if (propertyHelper.Property.CanWrite &&
-                    propertyHelper.Property.SetMethod?.IsPublic == true &&
-                    !key.ModelType.GetTypeInfo().IsValueType)
-                {
-                    propertyEntry.PropertySetter = propertyHelper.ValueSetter;
-                }
-
+                var propertyEntry = CreateSinglePropertyDetails(propertyKey, propertyHelper);
                 propertyEntries.Add(propertyEntry);
             }
 
             return propertyEntries.ToArray();
+        }
+
+        private DefaultMetadataDetails CreateSinglePropertyDetails(
+            ModelMetadataIdentity propertyKey,
+            PropertyHelper propertyHelper)
+        {
+            Debug.Assert(propertyKey.MetadataKind == ModelMetadataKind.Property);
+            var containerType = propertyKey.ContainerType;
+
+            var attributes = ModelAttributes.GetAttributesForProperty(
+                containerType,
+                propertyHelper.Property,
+                propertyKey.ModelType);
+
+            var propertyEntry = new DefaultMetadataDetails(propertyKey, attributes);
+            if (propertyHelper.Property.CanRead && propertyHelper.Property.GetMethod?.IsPublic == true)
+            {
+                var getter = PropertyHelper.MakeNullSafeFastPropertyGetter(propertyHelper.Property);
+                propertyEntry.PropertyGetter = getter;
+            }
+
+            if (propertyHelper.Property.CanWrite &&
+                propertyHelper.Property.SetMethod?.IsPublic == true &&
+                !containerType.IsValueType)
+            {
+                propertyEntry.PropertySetter = propertyHelper.ValueSetter;
+            }
+
+            return propertyEntry;
         }
 
         /// <summary>
@@ -190,18 +329,23 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Metadata
         /// </remarks>
         protected virtual DefaultMetadataDetails CreateTypeDetails(ModelMetadataIdentity key)
         {
-            return new DefaultMetadataDetails(key, ModelAttributes.GetAttributesForType(key.ModelType));
+            return new DefaultMetadataDetails(
+                key,
+                ModelAttributes.GetAttributesForType(key.ModelType));
+        }
+
+        protected virtual DefaultMetadataDetails CreateParameterDetails(ModelMetadataIdentity key)
+        {
+            return new DefaultMetadataDetails(
+                key,
+                ModelAttributes.GetAttributesForParameter(key.ParameterInfo, key.ModelType));
         }
 
         private class TypeCache : ConcurrentDictionary<ModelMetadataIdentity, ModelMetadataCacheEntry>
         {
-            public TypeCache()
-                : base(ModelMetadataIdentityComparer.Instance)
-            {
-            }
         }
 
-        private struct ModelMetadataCacheEntry
+        private readonly struct ModelMetadataCacheEntry
         {
             public ModelMetadataCacheEntry(ModelMetadata metadata, DefaultMetadataDetails details)
             {
@@ -209,40 +353,9 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Metadata
                 Details = details;
             }
 
-            public ModelMetadata Metadata { get; private set; }
+            public ModelMetadata Metadata { get; }
 
-            public DefaultMetadataDetails Details { get; private set; }
-        }
-
-        private class ModelMetadataIdentityComparer : IEqualityComparer<ModelMetadataIdentity>
-        {
-            public static readonly ModelMetadataIdentityComparer Instance = new ModelMetadataIdentityComparer();
-
-            public bool Equals(ModelMetadataIdentity x, ModelMetadataIdentity y)
-            {
-                return
-                    x.ContainerType == y.ContainerType &&
-                    x.ModelType == y.ModelType &&
-                    x.Name == y.Name;
-            }
-
-            public int GetHashCode(ModelMetadataIdentity obj)
-            {
-                var hash = 17;
-                hash = hash * 23 + obj.ModelType.GetHashCode();
-
-                if (obj.ContainerType != null)
-                {
-                    hash = hash * 23 + obj.ContainerType.GetHashCode();
-                }
-
-                if (obj.Name != null)
-                {
-                    hash = hash * 23 + obj.Name.GetHashCode();
-                }
-
-                return hash;
-            }
+            public DefaultMetadataDetails Details { get; }
         }
     }
 }

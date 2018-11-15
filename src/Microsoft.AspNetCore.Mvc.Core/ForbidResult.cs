@@ -4,8 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Http.Authentication;
-using Microsoft.AspNetCore.Mvc.Internal;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -20,7 +19,7 @@ namespace Microsoft.AspNetCore.Mvc
         /// Initializes a new instance of <see cref="ForbidResult"/>.
         /// </summary>
         public ForbidResult()
-            : this(new string[] { })
+            : this(Array.Empty<string>())
         {
         }
 
@@ -51,7 +50,7 @@ namespace Microsoft.AspNetCore.Mvc
         /// <param name="properties"><see cref="AuthenticationProperties"/> used to perform the authentication
         /// challenge.</param>
         public ForbidResult(AuthenticationProperties properties)
-            : this(new string[] { }, properties)
+            : this(Array.Empty<string>(), properties)
         {
         }
 
@@ -103,18 +102,16 @@ namespace Microsoft.AspNetCore.Mvc
 
             logger.ForbidResultExecuting(AuthenticationSchemes);
 
-            var authentication = context.HttpContext.Authentication;
-
             if (AuthenticationSchemes != null && AuthenticationSchemes.Count > 0)
             {
                 for (var i = 0; i < AuthenticationSchemes.Count; i++)
                 {
-                    await authentication.ForbidAsync(AuthenticationSchemes[i], Properties);
+                    await context.HttpContext.ForbidAsync(AuthenticationSchemes[i], Properties);
                 }
             }
             else
             {
-                await authentication.ForbidAsync(Properties);
+                await context.HttpContext.ForbidAsync(Properties);
             }
         }
     }

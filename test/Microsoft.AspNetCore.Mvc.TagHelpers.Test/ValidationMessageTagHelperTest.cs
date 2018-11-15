@@ -14,6 +14,7 @@ using Microsoft.AspNetCore.Mvc.ViewEngines;
 using Microsoft.AspNetCore.Mvc.ViewFeatures;
 using Microsoft.AspNetCore.Razor.TagHelpers;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.AspNetCore.Testing;
 using Moq;
 using Xunit;
 
@@ -40,6 +41,7 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
             var expectedPostContent = "original post-content";
 
             var tagHelperContext = new TagHelperContext(
+                tagName: "not-span",
                 allAttributes: new TagHelperAttributeList
                 {
                     { "id", "myvalidationmessage" },
@@ -89,6 +91,151 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
         }
 
         [Fact]
+        public async Task ProcessAsync_WithEmptyNameFor_Throws()
+        {
+            // Arrange
+            var expectedTagName = "span";
+            var expectedMessage = "The name of an HTML field cannot be null or empty. Instead use methods " +
+                "Microsoft.AspNetCore.Mvc.Rendering.IHtmlHelper.Editor or Microsoft.AspNetCore.Mvc.Rendering." +
+                "IHtmlHelper`1.EditorFor with a non-empty htmlFieldName argument value.";
+
+            var metadataProvider = new EmptyModelMetadataProvider();
+            var modelExpression = CreateModelExpression(string.Empty);
+            var htmlGenerator = new TestableHtmlGenerator(metadataProvider);
+            var viewContext = TestableHtmlGenerator.GetViewContext(
+                model: null,
+                htmlGenerator: htmlGenerator,
+                metadataProvider: metadataProvider);
+
+            var validationMessageTagHelper = new ValidationMessageTagHelper(htmlGenerator)
+            {
+                For = modelExpression,
+                ViewContext = viewContext,
+            };
+
+            var tagHelperContext = new TagHelperContext(
+                expectedTagName,
+                new TagHelperAttributeList
+                {
+                    { "for", modelExpression },
+                },
+                new Dictionary<object, object>(),
+                "test");
+
+            var output = new TagHelperOutput(
+                expectedTagName,
+                new TagHelperAttributeList(),
+                (_, __) => Task.FromResult<TagHelperContent>(new DefaultTagHelperContent()));
+
+            // Act & Assert
+            await ExceptionAssert.ThrowsArgumentAsync(
+                () => validationMessageTagHelper.ProcessAsync(tagHelperContext, output),
+                paramName: "expression",
+                exceptionMessage: expectedMessage);
+        }
+
+        [Fact]
+        public async Task ProcessAsync_GeneratesExpectedOutput_WithEmptyNameFor_WithValidationFor()
+        {
+            // Arrange
+            var expectedAttributeValue = "-expression-";
+            var expectedTagName = "span";
+
+            var metadataProvider = new EmptyModelMetadataProvider();
+            var modelExpression = CreateModelExpression(string.Empty);
+            var htmlGenerator = new TestableHtmlGenerator(metadataProvider);
+            var viewContext = TestableHtmlGenerator.GetViewContext(
+                model: null,
+                htmlGenerator: htmlGenerator,
+                metadataProvider: metadataProvider);
+
+            var validationMessageTagHelper = new ValidationMessageTagHelper(htmlGenerator)
+            {
+                For = modelExpression,
+                ViewContext = viewContext,
+            };
+
+            var tagHelperContext = new TagHelperContext(
+                expectedTagName,
+                new TagHelperAttributeList
+                {
+                    { "for", modelExpression },
+                },
+                new Dictionary<object, object>(),
+                "test");
+
+            var output = new TagHelperOutput(
+                expectedTagName,
+                new TagHelperAttributeList
+                {
+                    { "data-valmsg-for", expectedAttributeValue },
+                },
+                (_, __) => Task.FromResult<TagHelperContent>(new DefaultTagHelperContent()));
+
+            validationMessageTagHelper.ViewContext = viewContext;
+
+            // Act
+            await validationMessageTagHelper.ProcessAsync(tagHelperContext, output);
+
+            // Assert
+            Assert.Equal(expectedTagName, output.TagName);
+            Assert.Collection(output.Attributes,
+                attribute =>
+                {
+                    Assert.Equal("data-valmsg-for", attribute.Name);
+                    Assert.Equal(expectedAttributeValue, attribute.Value);
+                },
+                attribute =>
+                {
+                    Assert.Equal("class", attribute.Name);
+                    Assert.Equal("field-validation-valid", attribute.Value);
+                },
+                attribute =>
+                {
+                    Assert.Equal("data-valmsg-replace", attribute.Name);
+                    Assert.Equal("true", attribute.Value);
+                });
+        }
+
+        [Fact]
+        public async Task ProcessAsync_PassesValidationForThrough_EvenIfNullFor()
+        {
+            // Arrange
+            var expectedAttributeValue = "-expression-";
+            var expectedTagName = "span";
+
+            // Generator is not used in this scenario.
+            var generator = new Mock<IHtmlGenerator>(MockBehavior.Strict);
+            var validationMessageTagHelper = new ValidationMessageTagHelper(generator.Object)
+            {
+                ViewContext = CreateViewContext(),
+            };
+
+            var tagHelperContext = new TagHelperContext(
+                expectedTagName,
+                new TagHelperAttributeList(),
+                new Dictionary<object, object>(),
+                "test");
+
+            var output = new TagHelperOutput(
+                expectedTagName,
+                new TagHelperAttributeList
+                {
+                    { "data-valmsg-for", expectedAttributeValue },
+                },
+                (_, __) => Task.FromResult<TagHelperContent>(new DefaultTagHelperContent()));
+
+            // Act
+            await validationMessageTagHelper.ProcessAsync(tagHelperContext, output);
+
+            // Assert
+            Assert.Equal(expectedTagName, output.TagName);
+            var attribute = Assert.Single(output.Attributes);
+            Assert.Equal("data-valmsg-for", attribute.Name);
+            Assert.Equal(expectedAttributeValue, attribute.Value);
+        }
+
+        [Fact]
         public async Task ProcessAsync_CallsIntoGenerateValidationMessageWithExpectedParameters()
         {
             // Arrange
@@ -114,6 +261,7 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
             var expectedContent = "original content";
             var expectedPostContent = "original post-content";
             var context = new TagHelperContext(
+                tagName: "span",
                 allAttributes: new TagHelperAttributeList(
                     Enumerable.Empty<TagHelperAttribute>()),
                 items: new Dictionary<object, object>(),
@@ -149,7 +297,9 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
         [InlineData("\r\n  \r\n", "\r\n Something Else \r\n", "\r\n Something Else \r\n")]
         [InlineData("\r\n  \r\n", "Some Content", "Some Content")]
         public async Task ProcessAsync_DoesNotOverrideOutputContent(
-            string childContent, string outputContent, string expectedOutputContent)
+            string childContent,
+            string outputContent,
+            string expectedOutputContent)
         {
             // Arrange
             var tagBuilder = new TagBuilder("span2");
@@ -184,6 +334,7 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
             output.Content.AppendHtml(outputContent);
 
             var context = new TagHelperContext(
+                tagName: "span",
                 allAttributes: new TagHelperAttributeList(
                     Enumerable.Empty<TagHelperAttribute>()),
                 items: new Dictionary<object, object>(),
@@ -206,10 +357,12 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
         }
 
         [Theory]
-        [InlineData("Content of validation message", "Content of validation message")]
-        [InlineData("\r\n  \r\n", "New HTML")]
+        [InlineData("Content of validation message", "Content of validation message", "New HTML")]
+        [InlineData("\r\n  \r\n", null, "New HTML")]
         public async Task ProcessAsync_MergesTagBuilderFromGenerateValidationMessage(
-            string childContent, string expectedOutputContent)
+            string childContent,
+            string expectedMessage,
+            string expectedOutputContent)
         {
             // Arrange
             var tagBuilder = new TagBuilder("span2");
@@ -223,7 +376,7 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
                     It.IsAny<ViewContext>(),
                     It.IsAny<ModelExplorer>(),
                     It.IsAny<string>(),
-                    It.IsAny<string>(),
+                    expectedMessage,
                     It.IsAny<string>(),
                     It.IsAny<object>()))
                 .Returns(tagBuilder);
@@ -243,6 +396,7 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
                 });
 
             var context = new TagHelperContext(
+                tagName: "span",
                 allAttributes: new TagHelperAttributeList(
                     Enumerable.Empty<TagHelperAttribute>()),
                 items: new Dictionary<object, object>(),
@@ -283,6 +437,7 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
             output.PostContent.SetContent(expectedPostContent);
 
             var context = new TagHelperContext(
+                tagName: "span",
                 allAttributes: new TagHelperAttributeList(
                     Enumerable.Empty<TagHelperAttribute>()),
                 items: new Dictionary<object, object>(),
@@ -321,7 +476,8 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
                 actionContext,
                 Mock.Of<IView>(),
                 new ViewDataDictionary(
-                    new EmptyModelMetadataProvider()),
+                    new EmptyModelMetadataProvider(),
+                    new ModelStateDictionary()),
                 Mock.Of<ITempDataDictionary>(),
                 TextWriter.Null,
                 new HtmlHelperOptions());

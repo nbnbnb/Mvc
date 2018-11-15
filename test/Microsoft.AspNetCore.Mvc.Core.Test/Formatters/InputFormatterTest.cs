@@ -265,6 +265,9 @@ namespace Microsoft.AspNetCore.Mvc.Formatters
 
         [Theory]
         [InlineData("application/xml")]
+        [InlineData("application/mathml-content+xml")]
+        [InlineData("application/mathml-presentation+xml")]
+        [InlineData("application/mathml+xml; test=value")]
         public void XMLFormatter_CanRead_ReturnsTrueForSupportedMediaTypes(string requestContentType)
         {
             // Arrange
@@ -289,9 +292,6 @@ namespace Microsoft.AspNetCore.Mvc.Formatters
         }
 
         [Theory]
-        [InlineData("application/mathml-content+xml")]
-        [InlineData("application/mathml-presentation+xml")]
-        [InlineData("application/mathml+xml; undefined=ignored")]
         [InlineData("application/octet-stream; padding=3")]
         [InlineData("application/xml-dtd; undefined=ignored")]
         [InlineData("multipart/mixed; boundary=gc0p4Jq0M2Yt08j34c0p")]
@@ -390,7 +390,7 @@ namespace Microsoft.AspNetCore.Mvc.Formatters
             var formatter = new BadConfigurationFormatter();
             var context = new InputFormatterContext(
                 new DefaultHttpContext(),
-                "",
+                string.Empty,
                 new ModelStateDictionary(),
                 new EmptyModelMetadataProvider().GetMetadataForType(typeof(object)),
                 (s, e) => new StreamReader(s, e));
@@ -408,6 +408,31 @@ namespace Microsoft.AspNetCore.Mvc.Formatters
             // Act & Assert
             Assert.Throws<InvalidOperationException>(
                 () => formatter.GetSupportedContentTypes("application/json", typeof(object)));
+        }
+
+        [Theory]
+        [InlineData(true, true)]
+        [InlineData(false, false)]
+        public async Task ReadAsync_WithEmptyRequest_ReturnsNoValueResultWhenExpected(bool allowEmptyInputValue, bool expectedIsModelSet)
+        {
+            // Arrange
+            var formatter = new TestFormatter();
+            var context = new InputFormatterContext(
+                new DefaultHttpContext(),
+                string.Empty,
+                new ModelStateDictionary(),
+                new EmptyModelMetadataProvider().GetMetadataForType(typeof(object)),
+                (s, e) => new StreamReader(s, e),
+                allowEmptyInputValue);
+            context.HttpContext.Request.ContentLength = 0;
+
+            // Act
+            var result = await formatter.ReadAsync(context);
+
+            // Assert
+            Assert.False(result.HasError);
+            Assert.Null(result.Model);
+            Assert.Equal(expectedIsModelSet, result.IsModelSet);
         }
 
         private class BadConfigurationFormatter : InputFormatter

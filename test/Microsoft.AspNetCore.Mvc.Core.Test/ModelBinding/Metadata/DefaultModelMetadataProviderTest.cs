@@ -4,6 +4,7 @@
 using System;
 using System.Linq;
 using System.Reflection;
+using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace Microsoft.AspNetCore.Mvc.ModelBinding.Metadata
@@ -59,6 +60,33 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Metadata
         }
 
         [Fact]
+        public void GetMetadataForProperties_IncludesContainerMetadataForAllProperties()
+        {
+            // Arrange
+            var provider = CreateProvider();
+            var modelType = typeof(ModelType);
+
+            // Act
+            var metadata = provider.GetMetadataForProperties(modelType).ToArray();
+
+            // Assert
+            Assert.Collection(
+                metadata,
+                (propertyMetadata) =>
+                {
+                    Assert.Equal("Property1", propertyMetadata.PropertyName);
+                    Assert.NotNull(propertyMetadata.ContainerMetadata);
+                    Assert.Equal(modelType, propertyMetadata.ContainerMetadata.ModelType);
+                },
+                (propertyMetadata) =>
+                {
+                    Assert.Equal("Property2", propertyMetadata.PropertyName);
+                    Assert.NotNull(propertyMetadata.ContainerMetadata);
+                    Assert.Equal(modelType, propertyMetadata.ContainerMetadata.ModelType);
+                });
+        }
+
+        [Fact]
         public void GetMetadataForProperties_IncludesAllProperties()
         {
             // Arrange
@@ -83,7 +111,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Metadata
             var metadata = provider.GetMetadataForProperties(typeof(ModelTypeWithIndexer)).ToArray();
 
             // Assert
-            Assert.Equal(1, metadata.Length);
+            Assert.Single(metadata);
             Assert.Single(metadata, m => m.PropertyName == "Property1");
         }
 
@@ -171,9 +199,243 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Metadata
             }
         }
 
+        [Fact]
+        public void GetMetadataForParameter_SuppliesEmptyAttributes_WhenParameterHasNoAttributes()
+        {
+            // Arrange
+            var provider = CreateProvider();
+            var parameters = typeof(ModelType)
+                .GetMethod(nameof(ModelType.Method1))
+                .GetParameters();
+
+            // Act
+            var metadata = provider.GetMetadataForParameter(parameters[0]);
+
+            // Assert
+            var defaultMetadata = Assert.IsType<DefaultModelMetadata>(metadata);
+
+            // Not exactly "no attributes" due to SerializableAttribute on object.
+            Assert.IsType<SerializableAttribute>(Assert.Single(defaultMetadata.Attributes.Attributes));
+        }
+
+        [Fact]
+        public void GetMetadataForParameter_SuppliesAttributes_WhenParamHasAttributes()
+        {
+            // Arrange
+            var provider = CreateProvider();
+            var parameters = typeof(ModelType)
+                .GetMethod(nameof(ModelType.Method1))
+                .GetParameters();
+
+            // Act
+            var metadata = provider.GetMetadataForParameter(parameters[1]);
+
+            // Assert
+            var defaultMetadata = Assert.IsType<DefaultModelMetadata>(metadata);
+            Assert.Collection(
+                // Take(2) to ignore SerializableAttribute on object.
+                defaultMetadata.Attributes.Attributes.Take(2),
+                attribute =>
+                {
+                    var modelAttribute = Assert.IsType<ModelAttribute>(attribute);
+                    Assert.Equal("ParamAttrib1", modelAttribute.Value);
+                },
+                attribute =>
+                {
+                    var modelAttribute = Assert.IsType<ModelAttribute>(attribute);
+                    Assert.Equal("ParamAttrib2", modelAttribute.Value);
+                });
+        }
+
+        [Fact]
+        public void GetMetadataForParameter_Cached()
+        {
+            // Arrange
+            var provider = CreateProvider();
+            var parameter = typeof(ModelType)
+                .GetMethod(nameof(ModelType.Method1))
+                .GetParameters()[1];
+
+            // Act
+            var metadata1 = provider.GetMetadataForParameter(parameter);
+            var metadata2 = provider.GetMetadataForParameter(parameter);
+
+            // Assert
+            Assert.Same(metadata1, metadata2);
+        }
+
+        [Fact]
+        public void GetMetadataForParameter_WithModelType_ReturnsCombinedModelMetadata()
+        {
+            // Arrange
+            var parameter = GetType()
+                .GetMethod(nameof(GetMetadataForParameterTestMethod), BindingFlags.NonPublic | BindingFlags.Instance)
+                .GetParameters()[0];
+            var provider = CreateProvider();
+
+            // Act
+            var metadata = provider.GetMetadataForParameter(parameter, typeof(DerivedModelType));
+
+            // Assert
+            Assert.Equal(ModelMetadataKind.Parameter, metadata.MetadataKind);
+            Assert.Equal(typeof(DerivedModelType), metadata.ModelType);
+
+            var defaultModelMetadata = Assert.IsType<DefaultModelMetadata>(metadata);
+
+            Assert.Collection(
+                defaultModelMetadata.Attributes.Attributes,
+                a => Assert.Equal("OnParameter", Assert.IsType<ModelAttribute>(a).Value),
+                a => Assert.Equal("OnDerivedType", Assert.IsType<ModelAttribute>(a).Value),
+                a => Assert.Equal("OnType", Assert.IsType<ModelAttribute>(a).Value));
+
+            Assert.Collection(
+                metadata.Properties.OrderBy(p => p.Name),
+                p =>
+                {
+                    Assert.Equal(nameof(DerivedModelType.DerivedProperty), p.Name);
+
+                    var defaultPropertyMetadata = Assert.IsType<DefaultModelMetadata>(p);
+                    Assert.Collection(
+                        defaultPropertyMetadata.Attributes.Attributes.OfType<ModelAttribute>(),
+                        a => Assert.Equal("OnDerivedProperty", Assert.IsType<ModelAttribute>(a).Value));
+                },
+                p =>
+                {
+                    Assert.Equal(nameof(DerivedModelType.Property1), p.Name);
+
+                    var defaultPropertyMetadata = Assert.IsType<DefaultModelMetadata>(p);
+                    Assert.Collection(
+                        defaultPropertyMetadata.Attributes.Attributes.OfType<ModelAttribute>(),
+                        a => Assert.Equal("OnProperty", Assert.IsType<ModelAttribute>(a).Value),
+                        a => Assert.Equal("OnPropertyType", Assert.IsType<ModelAttribute>(a).Value));
+                },
+                p =>
+                {
+                    Assert.Equal(nameof(DerivedModelType.Property2), p.Name);
+                });
+        }
+
+        [Fact]
+        public void GetMetadataForParameter_WithModelType_CachesResults()
+        {
+            // Arrange
+            var parameter = GetType()
+                .GetMethod(nameof(GetMetadataForParameterTestMethod), BindingFlags.NonPublic | BindingFlags.Instance)
+                .GetParameters()[0];
+            var provider = CreateProvider();
+
+            // Act
+            var metadata1 = provider.GetMetadataForParameter(parameter, typeof(DerivedModelType));
+            var metadata2 = provider.GetMetadataForParameter(parameter, typeof(DerivedModelType));
+
+            // Assert
+            Assert.Same(metadata1, metadata2);
+        }
+
+        [Fact]
+        public void GetMetadataForParameter_WithModelType_VariesByModelType()
+        {
+            // Arrange
+            var parameter = GetType()
+                .GetMethod(nameof(GetMetadataForParameterTestMethod), BindingFlags.NonPublic | BindingFlags.Instance)
+                .GetParameters()[0];
+            var provider = CreateProvider();
+
+            // Act
+            var metadata1 = provider.GetMetadataForParameter(parameter, typeof(DerivedModelType));
+            var metadata2 = provider.GetMetadataForParameter(parameter, typeof(object));
+
+            // Assert
+            Assert.NotSame(metadata1, metadata2);
+        }
+
+        [Fact]
+        public void GetMetadataForProperty_WithModelType_ReturnsCombinedModelMetadata()
+        {
+            // Arrange
+            var property = typeof(TestContainer)
+                .GetProperty(nameof(TestContainer.ModelProperty));
+            var provider = CreateProvider();
+
+            // Act
+            var metadata = provider.GetMetadataForProperty(property, typeof(DerivedModelType));
+
+            // Assert
+            Assert.Equal(ModelMetadataKind.Property, metadata.MetadataKind);
+            Assert.Equal(typeof(DerivedModelType), metadata.ModelType);
+
+            var defaultModelMetadata = Assert.IsType<DefaultModelMetadata>(metadata);
+
+            Assert.Collection(
+                defaultModelMetadata.Attributes.Attributes,
+                a => Assert.Equal("OnProperty", Assert.IsType<ModelAttribute>(a).Value),
+                a => Assert.Equal("OnDerivedType", Assert.IsType<ModelAttribute>(a).Value),
+                a => Assert.Equal("OnType", Assert.IsType<ModelAttribute>(a).Value));
+
+            Assert.Collection(
+                metadata.Properties.OrderBy(p => p.Name),
+                p =>
+                {
+                    Assert.Equal(nameof(DerivedModelType.DerivedProperty), p.Name);
+
+                    var defaultPropertyMetadata = Assert.IsType<DefaultModelMetadata>(p);
+                    Assert.Collection(
+                        defaultPropertyMetadata.Attributes.Attributes.OfType<ModelAttribute>(),
+                        a => Assert.Equal("OnDerivedProperty", Assert.IsType<ModelAttribute>(a).Value));
+                },
+                p =>
+                {
+                    Assert.Equal(nameof(DerivedModelType.Property1), p.Name);
+
+                    var defaultPropertyMetadata = Assert.IsType<DefaultModelMetadata>(p);
+                    Assert.Collection(
+                        defaultPropertyMetadata.Attributes.Attributes.OfType<ModelAttribute>(),
+                        a => Assert.Equal("OnProperty", Assert.IsType<ModelAttribute>(a).Value),
+                        a => Assert.Equal("OnPropertyType", Assert.IsType<ModelAttribute>(a).Value));
+                },
+                p =>
+                {
+                    Assert.Equal(nameof(DerivedModelType.Property2), p.Name);
+                });
+        }
+
+        [Fact]
+        public void GetMetadataForProperty_WithModelType_CachesResults()
+        {
+            // Arrange
+            var property = typeof(TestContainer)
+                .GetProperty(nameof(TestContainer.ModelProperty));
+            var provider = CreateProvider();
+
+            // Act
+            var metadata1 = provider.GetMetadataForProperty(property, typeof(DerivedModelType));
+            var metadata2 = provider.GetMetadataForProperty(property, typeof(DerivedModelType));
+
+            // Assert
+            Assert.Same(metadata1, metadata2);
+        }
+
+        [Fact]
+        public void GetMetadataForProperty_WithModelType_VariesByModelType()
+        {
+            // Arrange
+            var property = typeof(TestContainer)
+                .GetProperty(nameof(TestContainer.ModelProperty));
+            var provider = CreateProvider();
+
+            // Act
+            var metadata1 = provider.GetMetadataForProperty(property, typeof(DerivedModelType));
+            var metadata2 = provider.GetMetadataForProperty(property, typeof(object));
+
+            // Assert
+            Assert.NotSame(metadata1, metadata2);
+        }
+
         private static DefaultModelMetadataProvider CreateProvider()
         {
-            return new DefaultModelMetadataProvider(new EmptyCompositeMetadataDetailsProvider());
+            return new DefaultModelMetadataProvider(
+                new EmptyCompositeMetadataDetailsProvider(),
+                Options.Create(new MvcOptions()));
         }
 
         [Model("OnType")]
@@ -183,6 +445,12 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Metadata
             public PropertyType Property1 { get; } = new PropertyType();
 
             public PropertyType Property2 { get; set; }
+
+            public void Method1(
+                object paramWithNoAttributes,
+                [Model("ParamAttrib1"), Model("ParamAttrib2")] object paramWithTwoAttributes)
+            {
+            }
         }
 
         [Model("OnPropertyType")]
@@ -190,6 +458,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Metadata
         {
         }
 
+        [AttributeUsage(AttributeTargets.All, AllowMultiple = true)]
         private class ModelAttribute : Attribute
         {
             public ModelAttribute(string value)
@@ -202,7 +471,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Metadata
 
         private class ModelTypeWithIndexer
         {
-            public PropertyType this[string key] { get { return null; } }
+            public PropertyType this[string key] => null;
 
             public PropertyType Property1 { get; set; }
         }
@@ -219,6 +488,19 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Metadata
         private class DerivedModelWithHiding : BaseModelWithHiding
         {
             public new string Property { get; set; }
+        }
+
+        [Model("OnDerivedType")]
+        private class DerivedModelType : ModelType
+        {
+            [Model("OnDerivedProperty")]
+            public string DerivedProperty { get; set; }
+        }
+
+        private class TestContainer
+        {
+            [Model("OnProperty")]
+            public ModelType ModelProperty { get; set; }
         }
     }
 }

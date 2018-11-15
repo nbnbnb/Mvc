@@ -5,10 +5,11 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Reflection;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc.Internal;
 using Microsoft.AspNetCore.Mvc.ModelBinding.Validation;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Primitives;
 using Xunit;
 
@@ -36,8 +37,9 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Binders
             bindingContext.ValueProvider = CreateEnumerableValueProvider("{0}", values);
 
             var binder = new DictionaryModelBinder<int, string>(
-                new SimpleTypeModelBinder(typeof(int)), 
-                new SimpleTypeModelBinder(typeof(string)));
+                new SimpleTypeModelBinder(typeof(int), NullLoggerFactory.Instance),
+                new SimpleTypeModelBinder(typeof(string), NullLoggerFactory.Instance),
+                NullLoggerFactory.Instance);
 
             // Act
             await binder.BindModelAsync(bindingContext);
@@ -76,8 +78,9 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Binders
             bindingContext.Model = dictionary;
 
             var binder = new DictionaryModelBinder<int, string>(
-                new SimpleTypeModelBinder(typeof(int)), 
-                new SimpleTypeModelBinder(typeof(string)));
+                new SimpleTypeModelBinder(typeof(int), NullLoggerFactory.Instance),
+                new SimpleTypeModelBinder(typeof(string), NullLoggerFactory.Instance),
+                NullLoggerFactory.Instance);
 
             // Act
             await binder.BindModelAsync(bindingContext);
@@ -132,8 +135,9 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Binders
         {
             // Arrange
             var binder = new DictionaryModelBinder<string, string>(
-                new SimpleTypeModelBinder(typeof(string)), 
-                new SimpleTypeModelBinder(typeof(string)));
+                new SimpleTypeModelBinder(typeof(string), NullLoggerFactory.Instance),
+                new SimpleTypeModelBinder(typeof(string), NullLoggerFactory.Instance),
+                NullLoggerFactory.Instance);
 
             var bindingContext = CreateContext();
             bindingContext.ModelName = modelName;
@@ -168,8 +172,9 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Binders
             };
 
             var binder = new DictionaryModelBinder<string, string>(
-                new SimpleTypeModelBinder(typeof(string)), 
-                new SimpleTypeModelBinder(typeof(string)));
+                new SimpleTypeModelBinder(typeof(string), NullLoggerFactory.Instance),
+                new SimpleTypeModelBinder(typeof(string), NullLoggerFactory.Instance),
+                NullLoggerFactory.Instance);
 
             var bindingContext = CreateContext();
             bindingContext.ModelName = "prefix";
@@ -218,8 +223,9 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Binders
             var stringDictionary = dictionary.ToDictionary(kvp => kvp.Key.ToString(), kvp => kvp.Value.ToString());
 
             var binder = new DictionaryModelBinder<long, int>(
-                new SimpleTypeModelBinder(typeof(long)), 
-                new SimpleTypeModelBinder(typeof(int)));
+                new SimpleTypeModelBinder(typeof(long), NullLoggerFactory.Instance),
+                new SimpleTypeModelBinder(typeof(int), NullLoggerFactory.Instance),
+                NullLoggerFactory.Instance);
 
             var bindingContext = CreateContext();
             bindingContext.ModelName = "prefix";
@@ -271,12 +277,14 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Binders
             var valueMetadata = metadataProvider.GetMetadataForType(typeof(ModelWithProperties));
 
             var binder = new DictionaryModelBinder<int, ModelWithProperties>(
-                new SimpleTypeModelBinder(typeof(int)),
+                new SimpleTypeModelBinder(typeof(int), NullLoggerFactory.Instance),
                 new ComplexTypeModelBinder(new Dictionary<ModelMetadata, IModelBinder>()
                 {
-                    { valueMetadata.Properties["Id"], new SimpleTypeModelBinder(typeof(int)) },
-                    { valueMetadata.Properties["Name"], new SimpleTypeModelBinder(typeof(string)) },
-                }));
+                    { valueMetadata.Properties["Id"], new SimpleTypeModelBinder(typeof(int), NullLoggerFactory.Instance) },
+                    { valueMetadata.Properties["Name"], new SimpleTypeModelBinder(typeof(string), NullLoggerFactory.Instance) },
+                },
+                NullLoggerFactory.Instance),
+                NullLoggerFactory.Instance);
 
             // Act
             await binder.BindModelAsync(bindingContext);
@@ -294,8 +302,8 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Binders
             Assert.Equal(
                 new KeyValuePair<string, int>[]
                 {
-                    new KeyValuePair<string, int>("23", 23),
-                    new KeyValuePair<string, int>("27", 27),
+                    new KeyValuePair<string, int>("prefix[23]", 23),
+                    new KeyValuePair<string, int>("prefix[27]", 27),
                 }.OrderBy(kvp => kvp.Key),
                 strategy.KeyMappings.OrderBy(kvp => kvp.Key));
         }
@@ -310,8 +318,9 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Binders
             // Arrange
             var expectedDictionary = new SortedDictionary<string, string>(dictionary);
             var binder = new DictionaryModelBinder<string, string>(
-                new SimpleTypeModelBinder(typeof(string)), 
-                new SimpleTypeModelBinder(typeof(string)));
+                new SimpleTypeModelBinder(typeof(string), NullLoggerFactory.Instance),
+                new SimpleTypeModelBinder(typeof(string), NullLoggerFactory.Instance),
+                NullLoggerFactory.Instance);
 
             var bindingContext = CreateContext();
             bindingContext.ModelName = modelName;
@@ -334,13 +343,22 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Binders
             Assert.Equal(expectedDictionary, resultDictionary);
         }
 
-        [Fact]
-        public async Task DictionaryModelBinder_CreatesEmptyCollection_IfIsTopLevelObject()
+        private IActionResult ActionWithDictionaryParameter(Dictionary<string, string> parameter) => null;
+
+        [Theory]
+        [InlineData(false, false)]
+        [InlineData(false, true)]
+        [InlineData(true, false)]
+        public async Task DictionaryModelBinder_CreatesEmptyCollection_IfIsTopLevelObject(
+            bool allowValidatingTopLevelNodes,
+            bool isBindingRequired)
         {
             // Arrange
             var binder = new DictionaryModelBinder<string, string>(
-                new SimpleTypeModelBinder(typeof(string)), 
-                new SimpleTypeModelBinder(typeof(string)));
+                new SimpleTypeModelBinder(typeof(string), NullLoggerFactory.Instance),
+                new SimpleTypeModelBinder(typeof(string), NullLoggerFactory.Instance),
+                NullLoggerFactory.Instance,
+                allowValidatingTopLevelNodes);
 
             var bindingContext = CreateContext();
             bindingContext.IsTopLevelObject = true;
@@ -349,7 +367,13 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Binders
             bindingContext.ModelName = "modelName";
 
             var metadataProvider = new TestModelMetadataProvider();
-            bindingContext.ModelMetadata = metadataProvider.GetMetadataForType(typeof(Dictionary<string, string>));
+            var parameter = typeof(DictionaryModelBinderTest)
+                .GetMethod(nameof(ActionWithDictionaryParameter), BindingFlags.Instance | BindingFlags.NonPublic)
+                .GetParameters()[0];
+            metadataProvider
+                .ForParameter(parameter)
+                .BindingDetails(b => b.IsBindingRequired = isBindingRequired);
+            bindingContext.ModelMetadata = metadataProvider.GetMetadataForParameter(parameter);
 
             bindingContext.ValueProvider = new TestValueProvider(new Dictionary<string, object>());
 
@@ -359,22 +383,78 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Binders
             // Assert
             Assert.Empty(Assert.IsType<Dictionary<string, string>>(bindingContext.Result.Model));
             Assert.True(bindingContext.Result.IsModelSet);
+            Assert.Equal(0, bindingContext.ModelState.ErrorCount);
+        }
+
+        [Fact]
+        public async Task DictionaryModelBinder_CreatesEmptyCollectionAndAddsError_IfIsTopLevelObject()
+        {
+            // Arrange
+            var binder = new DictionaryModelBinder<string, string>(
+                new SimpleTypeModelBinder(typeof(string), NullLoggerFactory.Instance),
+                new SimpleTypeModelBinder(typeof(string), NullLoggerFactory.Instance),
+                NullLoggerFactory.Instance,
+                allowValidatingTopLevelNodes: true);
+
+            var bindingContext = CreateContext();
+            bindingContext.IsTopLevelObject = true;
+            bindingContext.FieldName = "fieldName";
+            bindingContext.ModelName = "modelName";
+
+            var metadataProvider = new TestModelMetadataProvider();
+            var parameter = typeof(DictionaryModelBinderTest)
+                .GetMethod(nameof(ActionWithDictionaryParameter), BindingFlags.Instance | BindingFlags.NonPublic)
+                .GetParameters()[0];
+            metadataProvider
+                .ForParameter(parameter)
+                .BindingDetails(b => b.IsBindingRequired = true);
+            bindingContext.ModelMetadata = metadataProvider.GetMetadataForParameter(parameter);
+
+            bindingContext.ValueProvider = new TestValueProvider(new Dictionary<string, object>());
+
+            // Act
+            await binder.BindModelAsync(bindingContext);
+
+            // Assert
+            Assert.Empty(Assert.IsType<Dictionary<string, string>>(bindingContext.Result.Model));
+            Assert.True(bindingContext.Result.IsModelSet);
+
+            var keyValuePair = Assert.Single(bindingContext.ModelState);
+            Assert.Equal("modelName", keyValuePair.Key);
+            var error = Assert.Single(keyValuePair.Value.Errors);
+            Assert.Equal("A value for the 'fieldName' parameter or property was not provided.", error.ErrorMessage);
         }
 
         [Theory]
-        [InlineData("")]
-        [InlineData("param")]
-        public async Task DictionaryModelBinder_DoesNotCreateCollection_IfNotIsTopLevelObject(string prefix)
+        [InlineData("", false, false)]
+        [InlineData("", true, false)]
+        [InlineData("", false, true)]
+        [InlineData("", true, true)]
+        [InlineData("param", false, false)]
+        [InlineData("param", true, false)]
+        [InlineData("param", false, true)]
+        [InlineData("param", true, true)]
+        public async Task DictionaryModelBinder_DoesNotCreateCollection_IfNotIsTopLevelObject(
+            string prefix,
+            bool allowValidatingTopLevelNodes,
+            bool isBindingRequired)
         {
             // Arrange
             var binder = new DictionaryModelBinder<int, int>(
-                new SimpleTypeModelBinder(typeof(int)), 
-                new SimpleTypeModelBinder(typeof(int)));
+                new SimpleTypeModelBinder(typeof(int), NullLoggerFactory.Instance),
+                new SimpleTypeModelBinder(typeof(int), NullLoggerFactory.Instance),
+                NullLoggerFactory.Instance,
+                allowValidatingTopLevelNodes);
 
             var bindingContext = CreateContext();
             bindingContext.ModelName = ModelNames.CreatePropertyModelName(prefix, "ListProperty");
 
             var metadataProvider = new TestModelMetadataProvider();
+            metadataProvider
+                .ForProperty(
+                    typeof(ModelWithDictionaryProperties),
+                    nameof(ModelWithDictionaryProperties.DictionaryProperty))
+                .BindingDetails(b => b.IsBindingRequired = isBindingRequired);
             bindingContext.ModelMetadata = metadataProvider.GetMetadataForProperty(
                 typeof(ModelWithDictionaryProperties),
                 nameof(ModelWithDictionaryProperties.DictionaryProperty));
@@ -386,6 +466,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Binders
 
             // Assert
             Assert.False(bindingContext.Result.IsModelSet);
+            Assert.Equal(0, bindingContext.ModelState.ErrorCount);
         }
 
         // Model type -> can create instance.
@@ -412,8 +493,9 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Binders
         {
             // Arrange
             var binder = new DictionaryModelBinder<int, int>(
-                new SimpleTypeModelBinder(typeof(int)), 
-                new SimpleTypeModelBinder(typeof(int)));
+                new SimpleTypeModelBinder(typeof(int), NullLoggerFactory.Instance),
+                new SimpleTypeModelBinder(typeof(int), NullLoggerFactory.Instance),
+                NullLoggerFactory.Instance);
 
             // Act
             var result = binder.CanCreateInstance(modelType);
@@ -424,13 +506,14 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Binders
 
         private static DefaultModelBindingContext CreateContext()
         {
+            var actionContext = new ActionContext()
+            {
+                HttpContext = new DefaultHttpContext(),
+            };
             var modelBindingContext = new DefaultModelBindingContext()
             {
-                ActionContext = new ActionContext()
-                {
-                    HttpContext = new DefaultHttpContext(),
-                },
-                ModelState = new ModelStateDictionary(),
+                ActionContext = actionContext,
+                ModelState = actionContext.ModelState,
                 ValidationState = new ValidationStateDictionary(),
             };
 
@@ -483,14 +566,10 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Binders
                 valueProvider.Add(kvp.Key, string.Empty);
             }
 
-            var bindingContext = new DefaultModelBindingContext
-            {
-                ModelMetadata = metadata,
-                ModelName = "someName",
-                ModelState = new ModelStateDictionary(),
-                ValueProvider = valueProvider,
-                ValidationState = new ValidationStateDictionary(),
-            };
+            var bindingContext = CreateContext();
+            bindingContext.ModelMetadata = metadata;
+            bindingContext.ModelName = "someName";
+            bindingContext.ValueProvider = valueProvider;
 
             return bindingContext;
         }
@@ -520,15 +599,14 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Binders
 
             public override bool Equals(object obj)
             {
-                var other = obj as ModelWithProperties;
-                return other != null &&
+                return obj is ModelWithProperties other &&
                     Id == other.Id &&
                     string.Equals(Name, other.Name, StringComparison.Ordinal);
             }
 
             public override int GetHashCode()
             {
-                int nameCode = Name == null ? 0 : Name.GetHashCode();
+                var nameCode = Name == null ? 0 : Name.GetHashCode();
                 return nameCode ^ Id.GetHashCode();
             }
 

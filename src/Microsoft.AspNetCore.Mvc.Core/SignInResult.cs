@@ -4,9 +4,8 @@
 using System;
 using System.Security.Claims;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Http.Authentication;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Mvc.Core;
-using Microsoft.AspNetCore.Mvc.Internal;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -88,8 +87,7 @@ namespace Microsoft.AspNetCore.Mvc
 
             logger.SignInResultExecuting(AuthenticationScheme, Principal);
 
-            var authentication = context.HttpContext.Authentication;
-            await authentication.SignInAsync(AuthenticationScheme, Principal, Properties);
+            await context.HttpContext.SignInAsync(AuthenticationScheme, Principal, Properties);
         }
     }
 }

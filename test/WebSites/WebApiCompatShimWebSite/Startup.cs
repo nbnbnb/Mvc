@@ -4,6 +4,7 @@
 using System.IO;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace WebApiCompatShimWebSite
@@ -13,13 +14,14 @@ namespace WebApiCompatShimWebSite
         public void ConfigureServices(IServiceCollection services)
         {
             // Add MVC services to the services container
-            services.AddMvc().AddWebApiConventions();
+            services.AddMvc()
+                .AddWebApiConventions()
+                .SetCompatibilityVersion(CompatibilityVersion.Latest)
+                .AddMvcOptions(options => options.EnableEndpointRouting = false);
         }
 
         public void Configure(IApplicationBuilder app)
         {
-            app.UseCultureReplacer();
-
             app.UseMvc(routes =>
             {
                 // Tests include different styles of WebAPI conventional routing and action selection - the prefix keeps
@@ -36,15 +38,18 @@ namespace WebApiCompatShimWebSite
 
         public static void Main(string[] args)
         {
-            var host = new WebHostBuilder()
-                .UseContentRoot(Directory.GetCurrentDirectory())
-                .UseStartup<Startup>()
-                .UseKestrel()
-                .UseIISIntegration()
+            var host = CreateWebHostBuilder(args)
                 .Build();
 
             host.Run();
         }
+
+        public static IWebHostBuilder CreateWebHostBuilder(string[] args) =>
+            new WebHostBuilder()
+                .UseContentRoot(Directory.GetCurrentDirectory())
+                .UseStartup<Startup>()
+                .UseKestrel()
+                .UseIISIntegration();
     }
 }
 

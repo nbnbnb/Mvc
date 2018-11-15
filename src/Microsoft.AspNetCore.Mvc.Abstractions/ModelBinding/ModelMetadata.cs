@@ -8,6 +8,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Reflection;
 using Microsoft.AspNetCore.Mvc.ModelBinding.Metadata;
+using Microsoft.AspNetCore.Mvc.ModelBinding.Validation;
 using Microsoft.Extensions.Internal;
 
 namespace Microsoft.AspNetCore.Mvc.ModelBinding
@@ -16,12 +17,14 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
     /// A metadata representation of a model type, property or parameter.
     /// </summary>
     [DebuggerDisplay("{DebuggerToString(),nq}")]
-    public abstract class ModelMetadata : IEquatable<ModelMetadata>
+    public abstract class ModelMetadata : IEquatable<ModelMetadata>, IModelMetadataProvider
     {
         /// <summary>
         /// The default value of <see cref="ModelMetadata.Order"/>.
         /// </summary>
         public static readonly int DefaultOrder = 10000;
+
+        private int? _hashCode;
 
         /// <summary>
         /// Creates a new <see cref="ModelMetadata"/>.
@@ -35,30 +38,47 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
         }
 
         /// <summary>
-        /// Gets the container type of this metadata if it represents a property, otherwise <c>null</c>.
+        /// Gets the type containing the property if this metadata is for a property; <see langword="null"/> otherwise.
         /// </summary>
-        public Type ContainerType { get { return Identity.ContainerType; } }
+        public Type ContainerType => Identity.ContainerType;
+
+        /// <summary>
+        /// Gets the metadata for <see cref="ContainerType"/> if this metadata is for a property;
+        /// <see langword="null"/> otherwise.
+        /// </summary>
+        public virtual ModelMetadata ContainerMetadata
+        {
+            get
+            {
+                throw new NotImplementedException();
+            }
+        }
 
         /// <summary>
         /// Gets a value indicating the kind of metadata element represented by the current instance.
         /// </summary>
-        public ModelMetadataKind MetadataKind { get { return Identity.MetadataKind; } }
+        public ModelMetadataKind MetadataKind => Identity.MetadataKind;
 
         /// <summary>
         /// Gets the model type represented by the current instance.
         /// </summary>
-        public Type ModelType { get { return Identity.ModelType; } }
+        public Type ModelType => Identity.ModelType;
 
         /// <summary>
-        /// Gets the property name represented by the current instance.
+        /// Gets the name of the parameter or property if this metadata is for a parameter or property;
+        /// <see langword="null"/> otherwise i.e. if this is the metadata for a type.
         /// </summary>
-        public string PropertyName
-        {
-            get
-            {
-                return Identity.Name;
-            }
-        }
+        public string Name => Identity.Name;
+
+        /// <summary>
+        /// Gets the name of the parameter if this metadata is for a parameter; <see langword="null"/> otherwise.
+        /// </summary>
+        public string ParameterName => MetadataKind == ModelMetadataKind.Parameter ? Identity.Name : null;
+
+        /// <summary>
+        /// Gets the name of the property if this metadata is for a property; <see langword="null"/> otherwise.
+        /// </summary>
+        public string PropertyName => MetadataKind == ModelMetadataKind.Property ? Identity.Name : null;
 
         /// <summary>
         /// Gets the key for the current instance.
@@ -92,8 +112,8 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
         public abstract BindingSource BindingSource { get; }
 
         /// <summary>
-        /// Gets a value indicating whether or not to convert an empty string value to <c>null</c> when
-        /// representing a model as text.
+        /// Gets a value indicating whether or not to convert an empty string value or one containing only whitespace
+        /// characters to <c>null</c> when representing a model as text.
         /// </summary>
         public abstract bool ConvertEmptyStringToNull { get; }
 
@@ -110,8 +130,8 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
         public abstract string Description { get; }
 
         /// <summary>
-        /// Gets the composite format <see cref="string"/> (see
-        /// http://msdn.microsoft.com/en-us/library/txafckwd.aspx) used to display the model.
+        /// Gets the format string (see https://msdn.microsoft.com/en-us/library/txafckwd.aspx) used to display the
+        /// model.
         /// </summary>
         public abstract string DisplayFormatString { get; }
 
@@ -121,8 +141,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
         public abstract string DisplayName { get; }
 
         /// <summary>
-        /// Gets the composite format <see cref="string"/> (see
-        /// http://msdn.microsoft.com/en-us/library/txafckwd.aspx) used to edit the model.
+        /// Gets the format string (see https://msdn.microsoft.com/en-us/library/txafckwd.aspx) used to edit the model.
         /// </summary>
         public abstract string EditFormatString { get; }
 
@@ -243,9 +262,9 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
         public abstract bool IsRequired { get; }
 
         /// <summary>
-        /// Gets the <see cref="IModelBindingMessageProvider"/> instance.
+        /// Gets the <see cref="Metadata.ModelBindingMessageProvider"/> instance.
         /// </summary>
-        public abstract IModelBindingMessageProvider ModelBindingMessageProvider { get; }
+        public abstract ModelBindingMessageProvider ModelBindingMessageProvider { get; }
 
         /// <summary>
         /// Gets a value indicating where the current metadata should be ordered relative to other properties
@@ -295,9 +314,25 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
         public abstract string TemplateHint { get; }
 
         /// <summary>
+        /// Gets an <see cref="IPropertyValidationFilter"/> implementation that indicates whether this model should be
+        /// validated. If <c>null</c>, properties with this <see cref="ModelMetadata"/> are validated.
+        /// </summary>
+        /// <value>Defaults to <c>null</c>.</value>
+        public virtual IPropertyValidationFilter PropertyValidationFilter => null;
+
+        /// <summary>
         /// Gets a value that indicates whether properties or elements of the model should be validated.
         /// </summary>
         public abstract bool ValidateChildren { get; }
+
+        /// <summary>
+        /// Gets a value that indicates if the model, or one of it's properties, or elements has associatated validators.
+        /// </summary>
+        /// <remarks>
+        /// When <see langword="false"/>, validation can be assume that the model is valid (<see cref="ModelValidationState.Valid"/>) without
+        /// inspecting the object graph.
+        /// </remarks>
+        public virtual bool? HasValidators { get; }
 
         /// <summary>
         /// Gets a collection of metadata items for validators.
@@ -311,11 +346,12 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
         public Type ElementType { get; private set; }
 
         /// <summary>
-        /// Gets a value indicating whether <see cref="ModelType"/> is a simple type.
+        /// Gets a value indicating whether <see cref="ModelType"/> is a complex type.
         /// </summary>
         /// <remarks>
-        /// A simple type is defined as a <see cref="Type"/> which has a
-        /// <see cref="System.ComponentModel.TypeConverter"/> that can convert from <see cref="string"/>.
+        /// A complex type is defined as a <see cref="Type"/> without a <see cref="TypeConverter"/> that can convert
+        /// from <see cref="string"/>. Most POCO and <see cref="IEnumerable"/> types are therefore complex. Most, if
+        /// not all, BCL value types are simple types.
         /// </remarks>
         public bool IsComplexType { get; private set; }
 
@@ -370,12 +406,12 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
         /// </summary>
         /// <remarks>
         /// <see cref="GetDisplayName()"/> will return the first of the following expressions which has a
-        /// non-<c>null</c> value: <c>DisplayName</c>, <c>PropertyName</c>, <c>ModelType.Name</c>.
+        /// non-<see langword="null"/> value: <see cref="DisplayName"/>, <see cref="Name"/>, or <c>ModelType.Name</c>.
         /// </remarks>
         /// <returns>The display name.</returns>
         public string GetDisplayName()
         {
-            return DisplayName ?? PropertyName ?? ModelType.Name;
+            return DisplayName ?? Name ?? ModelType.Name;
         }
 
         /// <inheritdoc />
@@ -399,13 +435,19 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
         /// <inheritdoc />
         public override bool Equals(object obj)
         {
-            return base.Equals(obj as ModelMetadata);
+            return Equals(obj as ModelMetadata);
         }
 
         /// <inheritdoc />
         public override int GetHashCode()
         {
-            return Identity.GetHashCode();
+            // Normally caching the hashcode would be dangerous, but Identity is deeply immutable so this is safe.
+            if (_hashCode == null)
+            {
+                _hashCode = Identity.GetHashCode();
+            }
+
+            return _hashCode.Value;
         }
 
         private void InitializeTypeInformation()
@@ -450,14 +492,29 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
 
         private string DebuggerToString()
         {
-            if (Identity.MetadataKind == ModelMetadataKind.Type)
+            switch (MetadataKind)
             {
-                return $"ModelMetadata (Type: '{ModelType.Name}')";
+                case ModelMetadataKind.Parameter:
+                    return $"ModelMetadata (Parameter: '{ParameterName}' Type: '{ModelType.Name}')";
+                case ModelMetadataKind.Property:
+                    return $"ModelMetadata (Property: '{ContainerType.Name}.{PropertyName}' Type: '{ModelType.Name}')";
+                case ModelMetadataKind.Type:
+                    return $"ModelMetadata (Type: '{ModelType.Name}')";
+                default:
+                    return $"Unsupported MetadataKind '{MetadataKind}'.";
             }
-            else
-            {
-                return $"ModelMetadata (Property: '{ContainerType.Name}.{PropertyName}' Type: '{ModelType.Name}')";
-            }
+        }
+
+        /// <inheritdoc />
+        public virtual ModelMetadata GetMetadataForType(Type modelType)
+        {
+            throw new NotImplementedException();
+        }
+
+        /// <inheritdoc />
+        public virtual IEnumerable<ModelMetadata> GetMetadataForProperties(Type modelType)
+        {
+            throw new NotImplementedException();
         }
     }
 }

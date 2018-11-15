@@ -10,15 +10,15 @@ using System.Text;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.DataAnnotations;
-using Microsoft.AspNetCore.Mvc.DataAnnotations.Internal;
 using Microsoft.AspNetCore.Mvc.Formatters;
-using Microsoft.AspNetCore.Mvc.Internal;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
-using Microsoft.AspNetCore.Mvc.ModelBinding.Test;
 using Microsoft.AspNetCore.Mvc.ModelBinding.Validation;
-using Microsoft.AspNetCore.Mvc.TestCommon;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.Testing;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Microsoft.Net.Http.Headers;
 using Moq;
 using Xunit;
@@ -52,6 +52,7 @@ namespace Microsoft.AspNetCore.Mvc.Core.Test
 
             // Assert
             Assert.IsType<RedirectResult>(result);
+            Assert.False(result.PreserveMethod);
             Assert.False(result.Permanent);
             Assert.Same(url, result.Url);
         }
@@ -68,6 +69,41 @@ namespace Microsoft.AspNetCore.Mvc.Core.Test
 
             // Assert
             Assert.IsType<RedirectResult>(result);
+            Assert.False(result.PreserveMethod);
+            Assert.True(result.Permanent);
+            Assert.Same(url, result.Url);
+        }
+
+        [Fact]
+        public void RedirectPermanent_WithParameterUrl_SetsRedirectResultPreserveMethodAndSameUrl()
+        {
+            // Arrange
+            var controller = new TestableController();
+            var url = "/test/url";
+
+            // Act
+            var result = controller.RedirectPreserveMethod(url);
+
+            // Assert
+            Assert.IsType<RedirectResult>(result);
+            Assert.True(result.PreserveMethod);
+            Assert.False(result.Permanent);
+            Assert.Same(url, result.Url);
+        }
+
+        [Fact]
+        public void RedirectPermanent_WithParameterUrl_SetsRedirectResultPermanentPreserveMethodAndSameUrl()
+        {
+            // Arrange
+            var controller = new TestableController();
+            var url = "/test/url";
+
+            // Act
+            var result = controller.RedirectPermanentPreserveMethod(url);
+
+            // Assert
+            Assert.IsType<RedirectResult>(result);
+            Assert.True(result.PreserveMethod);
             Assert.True(result.Permanent);
             Assert.Same(url, result.Url);
         }
@@ -85,6 +121,19 @@ namespace Microsoft.AspNetCore.Mvc.Core.Test
                 () => controller.Redirect(url: url), "url");
         }
 
+        [Theory]
+        [InlineData(null)]
+        [InlineData("")]
+        public void RedirectPreserveMethod_WithParameter_NullOrEmptyUrl_Throws(string url)
+        {
+            // Arrange
+            var controller = new TestableController();
+
+            // Act & Assert
+            ExceptionAssert.ThrowsArgumentNullOrEmpty(
+                () => controller.RedirectPreserveMethod(url: url), "url");
+        }
+
         [Fact]
         public void LocalRedirect_WithParameterUrl_SetsLocalRedirectResultWithSameUrl()
         {
@@ -97,6 +146,7 @@ namespace Microsoft.AspNetCore.Mvc.Core.Test
 
             // Assert
             Assert.IsType<LocalRedirectResult>(result);
+            Assert.False(result.PreserveMethod);
             Assert.False(result.Permanent);
             Assert.Same(url, result.Url);
         }
@@ -113,6 +163,41 @@ namespace Microsoft.AspNetCore.Mvc.Core.Test
 
             // Assert
             Assert.IsType<LocalRedirectResult>(result);
+            Assert.False(result.PreserveMethod);
+            Assert.True(result.Permanent);
+            Assert.Same(url, result.Url);
+        }
+
+        [Fact]
+        public void LocalRedirectPermanent_WithParameterUrl_SetsLocalRedirectResultPreserveMethodWithSameUrl()
+        {
+            // Arrange
+            var controller = new TestableController();
+            var url = "/test/url";
+
+            // Act
+            var result = controller.LocalRedirectPreserveMethod(url);
+
+            // Assert
+            Assert.IsType<LocalRedirectResult>(result);
+            Assert.True(result.PreserveMethod);
+            Assert.False(result.Permanent);
+            Assert.Same(url, result.Url);
+        }
+
+        [Fact]
+        public void LocalRedirectPermanent_WithParameterUrl_SetsLocalRedirectResultPermanentPreservesMethodWithSameUrl()
+        {
+            // Arrange
+            var controller = new TestableController();
+            var url = "/test/url";
+
+            // Act
+            var result = controller.LocalRedirectPermanentPreserveMethod(url);
+
+            // Assert
+            Assert.IsType<LocalRedirectResult>(result);
+            Assert.True(result.PreserveMethod);
             Assert.True(result.Permanent);
             Assert.Same(url, result.Url);
         }
@@ -133,6 +218,32 @@ namespace Microsoft.AspNetCore.Mvc.Core.Test
         [Theory]
         [InlineData(null)]
         [InlineData("")]
+        public void LocalRedirectPreserveMethod_WithParameter_NullOrEmptyUrl_Throws(string url)
+        {
+            // Arrange
+            var controller = new TestableController();
+
+            // Act & Assert
+            ExceptionAssert.ThrowsArgumentNullOrEmpty(
+                () => controller.LocalRedirectPreserveMethod(localUrl: url), "localUrl");
+        }
+
+        [Theory]
+        [InlineData(null)]
+        [InlineData("")]
+        public void LocalRedirectPermanentPreserveMethod_WithParameter_NullOrEmptyUrl_Throws(string url)
+        {
+            // Arrange
+            var controller = new TestableController();
+
+            // Act & Assert
+            ExceptionAssert.ThrowsArgumentNullOrEmpty(
+                () => controller.LocalRedirectPermanentPreserveMethod(localUrl: url), "localUrl");
+        }
+
+        [Theory]
+        [InlineData(null)]
+        [InlineData("")]
         public void RedirectPermanent_WithParameter_NullOrEmptyUrl_Throws(string url)
         {
             // Arrange
@@ -141,6 +252,19 @@ namespace Microsoft.AspNetCore.Mvc.Core.Test
             // Act & Assert
             ExceptionAssert.ThrowsArgumentNullOrEmpty(
                 () => controller.RedirectPermanent(url: url), "url");
+        }
+
+        [Theory]
+        [InlineData(null)]
+        [InlineData("")]
+        public void RedirectPermanentPreserveMethod_WithParameter_NullOrEmptyUrl_Throws(string url)
+        {
+            // Arrange
+            var controller = new TestableController();
+
+            // Act & Assert
+            ExceptionAssert.ThrowsArgumentNullOrEmpty(
+                () => controller.RedirectPermanentPreserveMethod(url: url), "url");
         }
 
         [Fact]
@@ -154,6 +278,23 @@ namespace Microsoft.AspNetCore.Mvc.Core.Test
 
             // Assert
             Assert.IsType<RedirectToActionResult>(resultTemporary);
+            Assert.False(resultTemporary.PreserveMethod);
+            Assert.False(resultTemporary.Permanent);
+            Assert.Equal("SampleAction", resultTemporary.ActionName);
+        }
+
+        [Fact]
+        public void RedirectToActionPreserveMethod_WithParameterActionName_SetsResultActionName()
+        {
+            // Arrange
+            var controller = new TestableController();
+
+            // Act
+            var resultTemporary = controller.RedirectToActionPreserveMethod(actionName: "SampleAction");
+
+            // Assert
+            Assert.IsType<RedirectToActionResult>(resultTemporary);
+            Assert.True(resultTemporary.PreserveMethod);
             Assert.False(resultTemporary.Permanent);
             Assert.Equal("SampleAction", resultTemporary.ActionName);
         }
@@ -169,6 +310,23 @@ namespace Microsoft.AspNetCore.Mvc.Core.Test
 
             // Assert
             Assert.IsType<RedirectToActionResult>(resultPermanent);
+            Assert.False(resultPermanent.PreserveMethod);
+            Assert.True(resultPermanent.Permanent);
+            Assert.Equal("SampleAction", resultPermanent.ActionName);
+        }
+
+        [Fact]
+        public void RedirectToActionPermanentPreserveMethod_WithParameterActionName_SetsResultActionNameAndPermanent()
+        {
+            // Arrange
+            var controller = new TestableController();
+
+            // Act
+            var resultPermanent = controller.RedirectToActionPermanentPreserveMethod(actionName: "SampleAction");
+
+            // Assert
+            Assert.IsType<RedirectToActionResult>(resultPermanent);
+            Assert.True(resultPermanent.PreserveMethod);
             Assert.True(resultPermanent.Permanent);
             Assert.Equal("SampleAction", resultPermanent.ActionName);
         }
@@ -187,6 +345,7 @@ namespace Microsoft.AspNetCore.Mvc.Core.Test
 
             // Assert
             Assert.IsType<RedirectToActionResult>(resultTemporary);
+            Assert.False(resultTemporary.PreserveMethod);
             Assert.False(resultTemporary.Permanent);
             Assert.Equal("SampleAction", resultTemporary.ActionName);
             Assert.Equal(controllerName, resultTemporary.ControllerName);
@@ -196,8 +355,27 @@ namespace Microsoft.AspNetCore.Mvc.Core.Test
         [InlineData("")]
         [InlineData(null)]
         [InlineData("SampleController")]
-        public void RedirectToActionPermanent_WithParameterActionAndControllerName_SetsEqualNames(
-            string controllerName)
+        public void RedirectToActionPreserveMethod_WithParameterActionAndControllerName_SetsEqualNames(string controllerName)
+        {
+            // Arrange
+            var controller = new TestableController();
+
+            // Act
+            var resultTemporary = controller.RedirectToActionPreserveMethod(actionName: "SampleAction", controllerName: controllerName);
+
+            // Assert
+            Assert.IsType<RedirectToActionResult>(resultTemporary);
+            Assert.True(resultTemporary.PreserveMethod);
+            Assert.False(resultTemporary.Permanent);
+            Assert.Equal("SampleAction", resultTemporary.ActionName);
+            Assert.Equal(controllerName, resultTemporary.ControllerName);
+        }
+
+        [Theory]
+        [InlineData("")]
+        [InlineData(null)]
+        [InlineData("SampleController")]
+        public void RedirectToActionPermanent_WithParameterActionAndControllerName_SetsEqualNames(string controllerName)
         {
             // Arrange
             var controller = new TestableController();
@@ -207,6 +385,27 @@ namespace Microsoft.AspNetCore.Mvc.Core.Test
 
             // Assert
             Assert.IsType<RedirectToActionResult>(resultPermanent);
+            Assert.False(resultPermanent.PreserveMethod);
+            Assert.True(resultPermanent.Permanent);
+            Assert.Equal("SampleAction", resultPermanent.ActionName);
+            Assert.Equal(controllerName, resultPermanent.ControllerName);
+        }
+
+        [Theory]
+        [InlineData("")]
+        [InlineData(null)]
+        [InlineData("SampleController")]
+        public void RedirectToActionPermanentPreserveMethod_WithParameterActionAndControllerName_SetsEqualNames(string controllerName)
+        {
+            // Arrange
+            var controller = new TestableController();
+
+            // Act
+            var resultPermanent = controller.RedirectToActionPermanentPreserveMethod(actionName: "SampleAction", controllerName: controllerName);
+
+            // Assert
+            Assert.IsType<RedirectToActionResult>(resultPermanent);
+            Assert.True(resultPermanent.PreserveMethod);
             Assert.True(resultPermanent.Permanent);
             Assert.Equal("SampleAction", resultPermanent.ActionName);
             Assert.Equal(controllerName, resultPermanent.ControllerName);
@@ -226,6 +425,31 @@ namespace Microsoft.AspNetCore.Mvc.Core.Test
 
             // Assert
             Assert.IsType<RedirectToActionResult>(resultTemporary);
+            Assert.False(resultTemporary.PreserveMethod);
+            Assert.False(resultTemporary.Permanent);
+            Assert.Equal("SampleAction", resultTemporary.ActionName);
+            Assert.Equal("SampleController", resultTemporary.ControllerName);
+            Assert.Equal(expected, resultTemporary.RouteValues);
+        }
+
+        [Theory]
+        [MemberData(nameof(RedirectTestData))]
+        public void RedirectToActionPreserveMethod_WithParameterActionControllerRouteValues_SetsResultProperties(
+            object routeValues,
+            IEnumerable<KeyValuePair<string, object>> expected)
+        {
+            // Arrange
+            var controller = new TestableController();
+
+            // Act
+            var resultTemporary = controller.RedirectToActionPreserveMethod(
+                actionName: "SampleAction",
+                controllerName: "SampleController",
+                routeValues: routeValues);
+
+            // Assert
+            Assert.IsType<RedirectToActionResult>(resultTemporary);
+            Assert.True(resultTemporary.PreserveMethod);
             Assert.False(resultTemporary.Permanent);
             Assert.Equal("SampleAction", resultTemporary.ActionName);
             Assert.Equal("SampleController", resultTemporary.ControllerName);
@@ -249,6 +473,31 @@ namespace Microsoft.AspNetCore.Mvc.Core.Test
 
             // Assert
             Assert.IsType<RedirectToActionResult>(resultPermanent);
+            Assert.False(resultPermanent.PreserveMethod);
+            Assert.True(resultPermanent.Permanent);
+            Assert.Equal("SampleAction", resultPermanent.ActionName);
+            Assert.Equal("SampleController", resultPermanent.ControllerName);
+            Assert.Equal(expected, resultPermanent.RouteValues);
+        }
+
+        [Theory]
+        [MemberData(nameof(RedirectTestData))]
+        public void RedirectToActionPermanentPreserveMethod_WithParameterActionControllerRouteValues_SetsResultProperties(
+            object routeValues,
+            IEnumerable<KeyValuePair<string, object>> expected)
+        {
+            // Arrange
+            var controller = new TestableController();
+
+            // Act
+            var resultPermanent = controller.RedirectToActionPermanentPreserveMethod(
+                actionName: "SampleAction",
+                controllerName: "SampleController",
+                routeValues: routeValues);
+
+            // Assert
+            Assert.IsType<RedirectToActionResult>(resultPermanent);
+            Assert.True(resultPermanent.PreserveMethod);
             Assert.True(resultPermanent.Permanent);
             Assert.Equal("SampleAction", resultPermanent.ActionName);
             Assert.Equal("SampleController", resultPermanent.ControllerName);
@@ -269,9 +518,80 @@ namespace Microsoft.AspNetCore.Mvc.Core.Test
 
             // Assert
             Assert.IsType<RedirectToActionResult>(resultTemporary);
+            Assert.False(resultTemporary.PreserveMethod);
             Assert.False(resultTemporary.Permanent);
             Assert.Null(resultTemporary.ActionName);
             Assert.Equal(expected, resultTemporary.RouteValues);
+        }
+
+        [Theory]
+        [MemberData(nameof(RedirectTestData))]
+        public void RedirectToActionPreserveMethod_WithParameterActionAndRouteValues_SetsResultProperties(
+            object routeValues,
+            IEnumerable<KeyValuePair<string, object>> expected)
+        {
+            // Arrange
+            var controller = new TestableController();
+
+            // Act
+            var resultTemporary = controller.RedirectToActionPreserveMethod(actionName: null, routeValues: routeValues);
+
+            // Assert
+            Assert.IsType<RedirectToActionResult>(resultTemporary);
+            Assert.True(resultTemporary.PreserveMethod);
+            Assert.False(resultTemporary.Permanent);
+            Assert.Null(resultTemporary.ActionName);
+            Assert.Equal(expected, resultTemporary.RouteValues);
+        }
+
+        [Theory]
+        [MemberData(nameof(RedirectTestData))]
+        public void RedirectToAction_WithParameterActionAndControllerAndRouteValuesAndFragment_SetsResultProperties(
+            object routeValues,
+            IEnumerable<KeyValuePair<string, object>> expectedRouteValues)
+        {
+            // Arrange
+            var controller = new TestableController();
+            var expectedAction = "Action";
+            var expectedController = "Home";
+            var expectedFragment = "test";
+
+            // Act
+            var result = controller.RedirectToAction("Action", "Home", routeValues, "test");
+
+            // Assert
+            Assert.IsType<RedirectToActionResult>(result);
+            Assert.False(result.PreserveMethod);
+            Assert.False(result.Permanent);
+            Assert.Equal(expectedAction, result.ActionName);
+            Assert.Equal(expectedRouteValues, result.RouteValues);
+            Assert.Equal(expectedController, result.ControllerName);
+            Assert.Equal(expectedFragment, result.Fragment);
+        }
+
+        [Theory]
+        [MemberData(nameof(RedirectTestData))]
+        public void RedirectToActionPreserveMethod_WithParameterActionAndControllerAndRouteValuesAndFragment_SetsResultProperties(
+            object routeValues,
+            IEnumerable<KeyValuePair<string, object>> expectedRouteValues)
+        {
+            // Arrange
+            var controller = new TestableController();
+            var expectedAction = "Action";
+            var expectedController = "Home";
+            var expectedFragment = "test";
+
+            // Act
+            var result = controller.RedirectToActionPreserveMethod("Action", "Home", routeValues, "test");
+
+            // Assert
+            Assert.IsType<RedirectToActionResult>(result);
+            Assert.True(result.PreserveMethod);
+            Assert.False(result.Permanent);
+            Assert.Equal(expectedAction, result.ActionName);
+            Assert.Equal(expectedRouteValues, result.RouteValues);
+            Assert.Equal(expectedController, result.ControllerName);
+            Assert.Equal(expectedFragment, result.Fragment);
         }
 
         [Theory]
@@ -288,9 +608,84 @@ namespace Microsoft.AspNetCore.Mvc.Core.Test
 
             // Assert
             Assert.IsType<RedirectToActionResult>(resultPermanent);
+            Assert.False(resultPermanent.PreserveMethod);
             Assert.True(resultPermanent.Permanent);
             Assert.Null(resultPermanent.ActionName);
             Assert.Equal(expected, resultPermanent.RouteValues);
+        }
+
+        [Theory]
+        [MemberData(nameof(RedirectTestData))]
+        public void RedirectToActionPermanentPreserveMethod_WithParameterActionAndRouteValues_SetsResultProperties(
+            object routeValues,
+            IEnumerable<KeyValuePair<string, object>> expected)
+        {
+            // Arrange
+            var controller = new TestableController();
+
+            // Act
+            var resultPermanent = controller.RedirectToActionPermanentPreserveMethod(actionName: null, routeValues: routeValues);
+
+            // Assert
+            Assert.IsType<RedirectToActionResult>(resultPermanent);
+            Assert.True(resultPermanent.PreserveMethod);
+            Assert.True(resultPermanent.Permanent);
+            Assert.Null(resultPermanent.ActionName);
+            Assert.Equal(expected, resultPermanent.RouteValues);
+        }
+
+        [Theory]
+        [MemberData(nameof(RedirectTestData))]
+        public void RedirectToActionPermanent_WithParameterActionAndControllerAndRouteValuesAndFragment_SetsResultProperties(
+            object routeValues,
+            IEnumerable<KeyValuePair<string, object>> expectedRouteValues)
+        {
+            // Arrange
+            var controller = new TestableController();
+            var expectedAction = "Action";
+            var expectedController = "Home";
+            var expectedFragment = "test";
+
+            // Act
+            var result = controller.RedirectToActionPermanent("Action", "Home", routeValues, fragment: "test");
+
+            // Assert
+            Assert.IsType<RedirectToActionResult>(result);
+            Assert.False(result.PreserveMethod);
+            Assert.True(result.Permanent);
+            Assert.Equal(expectedAction, result.ActionName);
+            Assert.Equal(expectedRouteValues, result.RouteValues);
+            Assert.Equal(expectedController, result.ControllerName);
+            Assert.Equal(expectedFragment, result.Fragment);
+        }
+
+        [Theory]
+        [MemberData(nameof(RedirectTestData))]
+        public void RedirectToActionPermanentPreserveMethod_WithParameterActionAndControllerAndRouteValuesAndFragment_SetsResultProperties(
+            object routeValues,
+            IEnumerable<KeyValuePair<string, object>> expectedRouteValues)
+        {
+            // Arrange
+            var controller = new TestableController();
+            var expectedAction = "Action";
+            var expectedController = "Home";
+            var expectedFragment = "test";
+
+            // Act
+            var result = controller.RedirectToActionPermanentPreserveMethod(
+                actionName: "Action",
+                controllerName: "Home",
+                routeValues: routeValues,
+                fragment: "test");
+
+            // Assert
+            Assert.IsType<RedirectToActionResult>(result);
+            Assert.True(result.PreserveMethod);
+            Assert.True(result.Permanent);
+            Assert.Equal(expectedAction, result.ActionName);
+            Assert.Equal(expectedRouteValues, result.RouteValues);
+            Assert.Equal(expectedController, result.ControllerName);
+            Assert.Equal(expectedFragment, result.Fragment);
         }
 
         [Theory]
@@ -307,8 +702,74 @@ namespace Microsoft.AspNetCore.Mvc.Core.Test
 
             // Assert
             Assert.IsType<RedirectToRouteResult>(resultTemporary);
+            Assert.False(resultTemporary.PreserveMethod);
             Assert.False(resultTemporary.Permanent);
             Assert.Equal(expected, resultTemporary.RouteValues);
+        }
+
+        [Theory]
+        [MemberData(nameof(RedirectTestData))]
+        public void RedirectToRoutePreserveMethod_WithParameterRouteValues_SetsResultEqualRouteValues(
+            object routeValues,
+            IEnumerable<KeyValuePair<string, object>> expected)
+        {
+            // Arrange
+            var controller = new TestableController();
+
+            // Act
+            var resultTemporary = controller.RedirectToRoutePreserveMethod(routeValues: routeValues);
+
+            // Assert
+            Assert.IsType<RedirectToRouteResult>(resultTemporary);
+            Assert.True(resultTemporary.PreserveMethod);
+            Assert.False(resultTemporary.Permanent);
+            Assert.Equal(expected, resultTemporary.RouteValues);
+        }
+
+        [Theory]
+        [MemberData(nameof(RedirectTestData))]
+        public void RedirectToRoute_WithParameterRouteNameAndRouteValuesAndFragment_SetsResultProperties(
+            object routeValues,
+            IEnumerable<KeyValuePair<string, object>> expectedRouteValues)
+        {
+            // Arrange
+            var controller = new TestableController();
+            var expectedRoute = "TestRoute";
+            var expectedFragment = "test";
+
+            // Act
+            var result = controller.RedirectToRoute("TestRoute", routeValues, "test");
+
+            // Assert
+            Assert.IsType<RedirectToRouteResult>(result);
+            Assert.False(result.PreserveMethod);
+            Assert.False(result.Permanent);
+            Assert.Equal(expectedRoute, result.RouteName);
+            Assert.Equal(expectedRouteValues, result.RouteValues);
+            Assert.Equal(expectedFragment, result.Fragment);
+        }
+
+        [Theory]
+        [MemberData(nameof(RedirectTestData))]
+        public void RedirectToRoutePreserveMethod_WithParameterRouteNameAndRouteValuesAndFragment_SetsResultProperties(
+            object routeValues,
+            IEnumerable<KeyValuePair<string, object>> expectedRouteValues)
+        {
+            // Arrange
+            var controller = new TestableController();
+            var expectedRoute = "TestRoute";
+            var expectedFragment = "test";
+
+            // Act
+            var result = controller.RedirectToRoutePreserveMethod(routeName: "TestRoute", routeValues: routeValues, fragment: "test");
+
+            // Assert
+            Assert.IsType<RedirectToRouteResult>(result);
+            Assert.True(result.PreserveMethod);
+            Assert.False(result.Permanent);
+            Assert.Equal(expectedRoute, result.RouteName);
+            Assert.Equal(expectedRouteValues, result.RouteValues);
+            Assert.Equal(expectedFragment, result.Fragment);
         }
 
         [Theory]
@@ -325,8 +786,74 @@ namespace Microsoft.AspNetCore.Mvc.Core.Test
 
             // Assert
             Assert.IsType<RedirectToRouteResult>(resultPermanent);
+            Assert.False(resultPermanent.PreserveMethod);
             Assert.True(resultPermanent.Permanent);
             Assert.Equal(expected, resultPermanent.RouteValues);
+        }
+
+        [Theory]
+        [MemberData(nameof(RedirectTestData))]
+        public void RedirectToRoutePermanentPreserveMethod_WithParameterRouteValues_SetsResultEqualRouteValuesAndPermanent(
+            object routeValues,
+            IEnumerable<KeyValuePair<string, object>> expected)
+        {
+            // Arrange
+            var controller = new TestableController();
+
+            // Act
+            var resultPermanent = controller.RedirectToRoutePermanentPreserveMethod(routeValues: routeValues);
+
+            // Assert
+            Assert.IsType<RedirectToRouteResult>(resultPermanent);
+            Assert.True(resultPermanent.PreserveMethod);
+            Assert.True(resultPermanent.Permanent);
+            Assert.Equal(expected, resultPermanent.RouteValues);
+        }
+
+        [Theory]
+        [MemberData(nameof(RedirectTestData))]
+        public void RedirectToRoutePermanent_WithParameterRouteNameAndRouteValuesAndFragment_SetsResultProperties(
+            object routeValues,
+            IEnumerable<KeyValuePair<string, object>> expectedRouteValues)
+        {
+            // Arrange
+            var controller = new TestableController();
+            var expectedRoute = "TestRoute";
+            var expectedFragment = "test";
+
+            // Act
+            var result = controller.RedirectToRoutePermanent("TestRoute", routeValues, "test");
+
+            // Assert
+            Assert.IsType<RedirectToRouteResult>(result);
+            Assert.False(result.PreserveMethod);
+            Assert.True(result.Permanent);
+            Assert.Equal(expectedRoute, result.RouteName);
+            Assert.Equal(expectedRouteValues, result.RouteValues);
+            Assert.Equal(expectedFragment, result.Fragment);
+        }
+
+        [Theory]
+        [MemberData(nameof(RedirectTestData))]
+        public void RedirectToRoutePermanentPreserveMethod_WithParameterRouteNameAndRouteValuesAndFragment_SetsResultProperties(
+            object routeValues,
+            IEnumerable<KeyValuePair<string, object>> expectedRouteValues)
+        {
+            // Arrange
+            var controller = new TestableController();
+            var expectedRoute = "TestRoute";
+            var expectedFragment = "test";
+
+            // Act
+            var result = controller.RedirectToRoutePermanentPreserveMethod(routeName: "TestRoute", routeValues: routeValues, fragment: "test");
+
+            // Assert
+            Assert.IsType<RedirectToRouteResult>(result);
+            Assert.True(result.PreserveMethod);
+            Assert.True(result.Permanent);
+            Assert.Equal(expectedRoute, result.RouteName);
+            Assert.Equal(expectedRouteValues, result.RouteValues);
+            Assert.Equal(expectedFragment, result.Fragment);
         }
 
         [Fact]
@@ -341,6 +868,24 @@ namespace Microsoft.AspNetCore.Mvc.Core.Test
 
             // Assert
             Assert.IsType<RedirectToRouteResult>(resultTemporary);
+            Assert.False(resultTemporary.PreserveMethod);
+            Assert.False(resultTemporary.Permanent);
+            Assert.Same(routeName, resultTemporary.RouteName);
+        }
+
+        [Fact]
+        public void RedirectToRoutePreserveMethod_WithParameterRouteName_SetsResultSameRouteName()
+        {
+            // Arrange
+            var controller = new TestableController();
+            var routeName = "CustomRouteName";
+
+            // Act;
+            var resultTemporary = controller.RedirectToRoutePreserveMethod(routeName: routeName);
+
+            // Assert
+            Assert.IsType<RedirectToRouteResult>(resultTemporary);
+            Assert.True(resultTemporary.PreserveMethod);
             Assert.False(resultTemporary.Permanent);
             Assert.Same(routeName, resultTemporary.RouteName);
         }
@@ -357,6 +902,24 @@ namespace Microsoft.AspNetCore.Mvc.Core.Test
 
             // Assert
             Assert.IsType<RedirectToRouteResult>(resultPermanent);
+            Assert.False(resultPermanent.PreserveMethod);
+            Assert.True(resultPermanent.Permanent);
+            Assert.Same(routeName, resultPermanent.RouteName);
+        }
+
+        [Fact]
+        public void RedirectToRoutePermanentPreserveMethod_WithParameterRouteName_SetsResultSameRouteNameAndPermanent()
+        {
+            // Arrange
+            var controller = new TestableController();
+            var routeName = "CustomRouteName";
+
+            // Act
+            var resultPermanent = controller.RedirectToRoutePermanentPreserveMethod(routeName: routeName);
+
+            // Assert
+            Assert.IsType<RedirectToRouteResult>(resultPermanent);
+            Assert.True(resultPermanent.PreserveMethod);
             Assert.True(resultPermanent.Permanent);
             Assert.Same(routeName, resultPermanent.RouteName);
         }
@@ -376,6 +939,28 @@ namespace Microsoft.AspNetCore.Mvc.Core.Test
 
             // Assert
             Assert.IsType<RedirectToRouteResult>(resultTemporary);
+            Assert.False(resultTemporary.PreserveMethod);
+            Assert.False(resultTemporary.Permanent);
+            Assert.Same(routeName, resultTemporary.RouteName);
+            Assert.Equal(expected, resultTemporary.RouteValues);
+        }
+
+        [Theory]
+        [MemberData(nameof(RedirectTestData))]
+        public void RedirectToRoutePreserveMethod_WithParameterRouteNameAndRouteValues_SetsResultSameRouteNameAndRouteValues(
+            object routeValues,
+            IEnumerable<KeyValuePair<string, object>> expected)
+        {
+            // Arrange
+            var controller = new TestableController();
+            var routeName = "CustomRouteName";
+
+            // Act
+            var resultTemporary = controller.RedirectToRoutePreserveMethod(routeName: routeName, routeValues: routeValues);
+
+            // Assert
+            Assert.IsType<RedirectToRouteResult>(resultTemporary);
+            Assert.True(resultTemporary.PreserveMethod);
             Assert.False(resultTemporary.Permanent);
             Assert.Same(routeName, resultTemporary.RouteName);
             Assert.Equal(expected, resultTemporary.RouteValues);
@@ -396,6 +981,294 @@ namespace Microsoft.AspNetCore.Mvc.Core.Test
 
             // Assert
             Assert.IsType<RedirectToRouteResult>(resultPermanent);
+            Assert.False(resultPermanent.PreserveMethod);
+            Assert.True(resultPermanent.Permanent);
+            Assert.Same(routeName, resultPermanent.RouteName);
+            Assert.Equal(expected, resultPermanent.RouteValues);
+        }
+
+        [Fact]
+        public void RedirectToPage_WithPageName()
+        {
+            // Arrange
+            var controller = new TestableController();
+            var pageName = "/Page";
+
+            // Act
+            var result = controller.RedirectToPage(pageName);
+
+            // Assert
+            Assert.IsType<RedirectToPageResult>(result);
+            Assert.Equal(pageName, result.PageName);
+        }
+
+        [Fact]
+        public void RedirectToPage_WithPageNameAndHandler()
+        {
+            // Arrange
+            var controller = new TestableController();
+            var pageName = "/Page-Name";
+            var pageHandler = "page-handler";
+
+            // Act
+            var result = controller.RedirectToPage(pageName, pageHandler);
+
+            // Assert
+            Assert.IsType<RedirectToPageResult>(result);
+            Assert.Equal(pageName, result.PageName);
+            Assert.Equal(pageHandler, result.PageHandler);
+        }
+
+        [Fact]
+        public void RedirectToPage_WithPageNameAndRouteValues()
+        {
+            // Arrange
+            var controller = new TestableController();
+            var pageName = "/Page-Name";
+            var routeValues = new { key = "value" };
+
+            // Act
+            var result = controller.RedirectToPage(pageName, routeValues);
+
+            // Assert
+            Assert.IsType<RedirectToPageResult>(result);
+            Assert.Equal(pageName, result.PageName);
+            Assert.Collection(
+                result.RouteValues,
+                item =>
+                {
+                    Assert.Equal("key", item.Key);
+                    Assert.Equal("value", item.Value);
+                });
+        }
+
+        [Fact]
+        public void RedirectToPage_WithPageNameHandlerAndFragment()
+        {
+            // Arrange
+            var controller = new TestableController();
+            var pageName = "/Page-Name";
+            var pageHandler = "page-handler";
+            var fragment = "fragment";
+
+            // Act
+            var result = controller.RedirectToPage(pageName, pageHandler, fragment);
+
+            // Assert
+            Assert.IsType<RedirectToPageResult>(result);
+            Assert.Equal(pageName, result.PageName);
+            Assert.Equal(pageHandler, result.PageHandler);
+            Assert.Equal(fragment, result.Fragment);
+        }
+
+        [Fact]
+        public void RedirectToPage_WithPageNameRouteValuesHandlerAndFragment()
+        {
+            // Arrange
+            var controller = new TestableController();
+            var pageName = "/Page-Name";
+            var pageHandler = "page-handler";
+            var fragment = "fragment";
+            var routeValues = new { key = "value" };
+
+            // Act
+            var result = controller.RedirectToPage(pageName, pageHandler, routeValues, fragment);
+
+            // Assert
+            Assert.IsType<RedirectToPageResult>(result);
+            Assert.Equal(pageName, result.PageName);
+            Assert.Equal(pageHandler, result.PageHandler);
+            Assert.Collection(
+                result.RouteValues,
+                item =>
+                {
+                    Assert.Equal("key", item.Key);
+                    Assert.Equal("value", item.Value);
+                });
+            Assert.Equal(fragment, result.Fragment);
+        }
+
+        [Fact]
+        public void RedirectToPagePermanent_WithPageName()
+        {
+            // Arrange
+            var controller = new TestableController();
+            var pageName = "/Page-Name";
+
+            // Act
+            var result = controller.RedirectToPagePermanent(pageName);
+
+            // Assert
+            Assert.IsType<RedirectToPageResult>(result);
+            Assert.Equal(pageName, result.PageName);
+            Assert.True(result.Permanent);
+        }
+
+        [Fact]
+        public void RedirectToPagePermanent_WithPageNameAndPageHandler()
+        {
+            // Arrange
+            var controller = new TestableController();
+            var pageName = "/Page-Name";
+            var pageHandler = "page-handler";
+
+            // Act
+            var result = controller.RedirectToPagePermanent(pageName, pageHandler);
+
+            // Assert
+            Assert.IsType<RedirectToPageResult>(result);
+            Assert.Equal(pageName, result.PageName);
+            Assert.Equal(pageHandler, result.PageHandler);
+            Assert.True(result.Permanent);
+        }
+
+        [Fact]
+        public void RedirectToPagePermanent_WithPageNameAndRouteValues()
+        {
+            // Arrange
+            var controller = new TestableController();
+            var pageName = "/Page-Name";
+            var routeValues = new { key = "value" };
+
+            // Act
+            var result = controller.RedirectToPagePermanent(pageName, routeValues);
+
+            // Assert
+            Assert.IsType<RedirectToPageResult>(result);
+            Assert.Equal(pageName, result.PageName);
+            Assert.Collection(
+                result.RouteValues,
+                item =>
+                {
+                    Assert.Equal("key", item.Key);
+                    Assert.Equal("value", item.Value);
+                });
+            Assert.True(result.Permanent);
+        }
+
+        [Fact]
+        public void RedirectToPagePermanent_WithPageNamePageHandlerAndFragment()
+        {
+            // Arrange
+            var controller = new TestableController();
+            var pageName = "/Page-Name";
+            var pageHandler = "page-handler";
+            var fragment = "fragment";
+
+            // Act
+            var result = controller.RedirectToPagePermanent(pageName, pageHandler, fragment);
+
+            // Assert
+            Assert.IsType<RedirectToPageResult>(result);
+            Assert.Equal(pageName, result.PageName);
+            Assert.Equal(pageHandler, result.PageHandler);
+            Assert.Equal(fragment, result.Fragment);
+            Assert.True(result.Permanent);
+        }
+
+        [Fact]
+        public void RedirectToPagePermanent_WithPageNamePageHandlerRouteValuesAndFragment()
+        {
+            // Arrange
+            var controller = new TestableController();
+            var pageName = "/Page-Name";
+            var pageHandler = "page-handler";
+            var routeValues = new { key = "value" };
+            var fragment = "fragment";
+
+            // Act
+            var result = controller.RedirectToPagePermanent(pageName, pageHandler, routeValues, fragment);
+
+            // Assert
+            Assert.IsType<RedirectToPageResult>(result);
+            Assert.Equal(pageName, result.PageName);
+            Assert.Equal(pageHandler, result.PageHandler);
+            Assert.Collection(
+                result.RouteValues,
+                item =>
+                {
+                    Assert.Equal("key", item.Key);
+                    Assert.Equal("value", item.Value);
+                });
+            Assert.Equal(fragment, result.Fragment);
+            Assert.True(result.Permanent);
+        }
+
+        [Fact]
+        public void RedirectToPagePreserveMethod_WithParameterUrl_SetsRedirectResultPreserveMethod()
+        {
+            // Arrange
+            var pageModel = new TestableController();
+            var url = "/test/url";
+
+            // Act
+            var result = pageModel.RedirectToPagePreserveMethod(url);
+
+            // Assert
+            Assert.IsType<RedirectToPageResult>(result);
+            Assert.True(result.PreserveMethod);
+            Assert.False(result.Permanent);
+            Assert.Same(url, result.PageName);
+        }
+
+        [Theory]
+        [MemberData(nameof(RedirectTestData))]
+        public void RedirectToPagePreserveMethod_SetsResultProperties(
+            object routeValues,
+            IEnumerable<KeyValuePair<string, object>> expected)
+        {
+            // Arrange
+            var pageModel = new TestableController();
+            var pageName = "CustomRouteName";
+
+            // Act
+            var resultPermanent = pageModel.RedirectToPagePreserveMethod(pageName, routeValues: routeValues);
+
+            // Assert
+            Assert.IsType<RedirectToPageResult>(resultPermanent);
+            Assert.True(resultPermanent.PreserveMethod);
+            Assert.False(resultPermanent.Permanent);
+            Assert.Same(pageName, resultPermanent.PageName);
+            Assert.Equal(expected, resultPermanent.RouteValues);
+        }
+
+        [Theory]
+        [MemberData(nameof(RedirectTestData))]
+        public void RedirectToPagePermanentPreserveMethod_SetsResultProperties(
+            object routeValues,
+            IEnumerable<KeyValuePair<string, object>> expected)
+        {
+            // Arrange
+            var pageModel = new TestableController();
+            var routeName = "CustomRouteName";
+
+            // Act
+            var resultPermanent = pageModel.RedirectToPagePermanentPreserveMethod(routeName, routeValues: routeValues);
+
+            // Assert
+            Assert.IsType<RedirectToPageResult>(resultPermanent);
+            Assert.True(resultPermanent.PreserveMethod);
+            Assert.True(resultPermanent.Permanent);
+            Assert.Same(routeName, resultPermanent.PageName);
+            Assert.Equal(expected, resultPermanent.RouteValues);
+        }
+
+        [Theory]
+        [MemberData(nameof(RedirectTestData))]
+        public void RedirectToRoutePermanentPreserveMethod_WithParameterRouteNameAndRouteValues_SetsResultProperties(
+            object routeValues,
+            IEnumerable<KeyValuePair<string, object>> expected)
+        {
+            // Arrange
+            var controller = new TestableController();
+            var routeName = "CustomRouteName";
+
+            // Act
+            var resultPermanent = controller.RedirectToRoutePermanentPreserveMethod(routeName: routeName, routeValues: routeValues);
+
+            // Assert
+            Assert.IsType<RedirectToRouteResult>(resultPermanent);
+            Assert.True(resultPermanent.PreserveMethod);
             Assert.True(resultPermanent.Permanent);
             Assert.Same(routeName, resultPermanent.RouteName);
             Assert.Equal(expected, resultPermanent.RouteValues);
@@ -567,6 +1440,185 @@ namespace Microsoft.AspNetCore.Mvc.Core.Test
         }
 
         [Fact]
+        public void Accepted_SetsStatusCode()
+        {
+            // Arrange
+            var controller = new TestableController();
+
+            // Act
+            var result = controller.Accepted();
+
+            // Assert
+            Assert.IsType<AcceptedResult>(result);
+            Assert.Equal(StatusCodes.Status202Accepted, result.StatusCode);
+        }
+
+        [Fact]
+        public void Accepted_SetsValue()
+        {
+            // Arrange
+            var controller = new TestableController();
+            var value = new object();
+
+            // Act
+            var result = controller.Accepted(value);
+
+            // Assert
+            Assert.IsType<AcceptedResult>(result);
+            Assert.Equal(StatusCodes.Status202Accepted, result.StatusCode);
+            Assert.Same(value, result.Value);
+        }
+
+        [Fact]
+        public void Accepted_StringUri_SetsAcceptedLocation()
+        {
+            // Arrange
+            var controller = new TestableController();
+            var uri = "http://test/url";
+
+            // Act
+            var result = controller.Accepted(uri);
+
+            // Assert
+            Assert.IsType<AcceptedResult>(result);
+            Assert.Equal(StatusCodes.Status202Accepted, result.StatusCode);
+            Assert.Same(uri, result.Location);
+        }
+
+        [Fact]
+        public void Accepted_AbsoluteUri_SetsAcceptedLocation()
+        {
+            // Arrange
+            var controller = new TestableController();
+            var uri = new Uri("http://test/url");
+
+            // Act
+            var result = controller.Accepted(uri);
+
+            // Assert
+            Assert.IsType<AcceptedResult>(result);
+            Assert.Equal(StatusCodes.Status202Accepted, result.StatusCode);
+            Assert.Equal(uri.OriginalString, result.Location);
+        }
+
+        [Fact]
+        public void Accepted_RelativeUri_SetsAcceptedLocation()
+        {
+            // Arrange
+            var controller = new TestableController();
+            var uri = new Uri("/test/url", UriKind.Relative);
+
+            // Act
+            var result = controller.Accepted(uri);
+
+            // Assert
+            Assert.IsType<AcceptedResult>(result);
+            Assert.Equal(StatusCodes.Status202Accepted, result.StatusCode);
+            Assert.Equal(uri.OriginalString, result.Location);
+        }
+
+        [Fact]
+        public void AcceptedAtAction_SetsActionName()
+        {
+            // Arrange
+            var controller = new TestableController();
+
+            // Act
+            var result = controller.AcceptedAtAction("SampleAction");
+
+            // Assert
+            Assert.IsType<AcceptedAtActionResult>(result);
+            Assert.Equal(StatusCodes.Status202Accepted, result.StatusCode);
+            Assert.Equal("SampleAction", result.ActionName);
+        }
+
+        [Theory]
+        [InlineData("")]
+        [InlineData(null)]
+        [InlineData("SampleController")]
+        public void AcceptedAtAction_SetsActionController(string controllerName)
+        {
+            // Arrange
+            var controller = new TestableController();
+
+            // Act
+            var result = controller.AcceptedAtAction("SampleAction", controllerName);
+
+            // Assert
+            Assert.IsType<AcceptedAtActionResult>(result);
+            Assert.Equal(StatusCodes.Status202Accepted, result.StatusCode);
+            Assert.Equal("SampleAction", result.ActionName);
+            Assert.Equal(controllerName, result.ControllerName);
+        }
+
+        [Fact]
+        public void AcceptedAtAction_SetsActionControllerRouteValues()
+        {
+            // Arrange
+            var controller = new TestableController();
+            var expected = new Dictionary<string, object>
+            {
+                { "test", "case" },
+                { "sample", "route" },
+            };
+
+            // Act
+            var result = controller.AcceptedAtAction(
+                "SampleAction",
+                "SampleController",
+                new RouteValueDictionary(expected));
+
+            // Assert
+            Assert.IsType<AcceptedAtActionResult>(result);
+            Assert.Equal(StatusCodes.Status202Accepted, result.StatusCode);
+            Assert.Equal("SampleAction", result.ActionName);
+            Assert.Equal("SampleController", result.ControllerName);
+            Assert.Equal(expected, result.RouteValues);
+        }
+
+        [Fact]
+        public void AcceptedAtRoute_SetsRouteValues()
+        {
+            // Arrange
+            var controller = new TestableController();
+            var expected = new Dictionary<string, object>
+            {
+                { "test", "case" },
+                { "sample", "route" },
+            };
+
+            // Act
+            var result = controller.AcceptedAtRoute(new RouteValueDictionary(expected));
+
+            // Assert
+            Assert.IsType<AcceptedAtRouteResult>(result);
+            Assert.Equal(StatusCodes.Status202Accepted, result.StatusCode);
+            Assert.Equal(expected, result.RouteValues);
+        }
+
+        [Fact]
+        public void AcceptedAtRoute_SetsRouteNameAndValues()
+        {
+            // Arrange
+            var controller = new TestableController();
+            var routeName = "SampleRoute";
+            var expected = new Dictionary<string, object>
+            {
+                { "test", "case" },
+                { "sample", "route" },
+            };
+
+            // Act
+            var result = controller.AcceptedAtRoute(routeName, new RouteValueDictionary(expected));
+
+            // Assert
+            Assert.IsType<AcceptedAtRouteResult>(result);
+            Assert.Equal(StatusCodes.Status202Accepted, result.StatusCode);
+            Assert.Same(routeName, result.RouteName);
+            Assert.Equal(expected, result.RouteValues);
+        }
+
+        [Fact]
         public void File_WithContents()
         {
             // Arrange
@@ -581,6 +1633,51 @@ namespace Microsoft.AspNetCore.Mvc.Core.Test
             Assert.Same(fileContents, result.FileContents);
             Assert.Equal("application/pdf", result.ContentType.ToString());
             Assert.Equal(string.Empty, result.FileDownloadName);
+            Assert.False(result.EnableRangeProcessing);
+        }
+
+        [Fact]
+        public void File_WithContents_EnableRangeProcessing()
+        {
+            // Arrange
+            var controller = new TestableController();
+            var fileContents = new byte[0];
+
+            // Act
+            var result = controller.File(fileContents, "application/pdf", true);
+
+            // Assert
+            Assert.NotNull(result);
+            Assert.Same(fileContents, result.FileContents);
+            Assert.Equal("application/pdf", result.ContentType.ToString());
+            Assert.Equal(string.Empty, result.FileDownloadName);
+            Assert.True(result.EnableRangeProcessing);
+        }
+
+        [Theory]
+        [InlineData(null, null, false)]
+        [InlineData(null, "\"Etag\"", false)]
+        [InlineData("05/01/2008 +1:00", null, true)]
+        [InlineData("05/01/2008 +1:00", "\"Etag\"", true)]
+        public void File_WithContents_LastModifiedAndEtag(string lastModifiedString, string entityTagString, bool enableRangeProcessing)
+        {
+            // Arrange
+            var controller = new TestableController();
+            var fileContents = new byte[0];
+            var lastModified = (lastModifiedString == null) ? (DateTimeOffset?)null : DateTimeOffset.Parse(lastModifiedString);
+            var entityTag = (entityTagString == null) ? null : new EntityTagHeaderValue(entityTagString);
+
+            // Act
+            var result = controller.File(fileContents, "application/pdf", lastModified, entityTag, enableRangeProcessing);
+
+            // Assert
+            Assert.NotNull(result);
+            Assert.Same(fileContents, result.FileContents);
+            Assert.Equal("application/pdf", result.ContentType.ToString());
+            Assert.Equal(string.Empty, result.FileDownloadName);
+            Assert.Equal(lastModified, result.LastModified);
+            Assert.Equal(entityTag, result.EntityTag);
+            Assert.Equal(enableRangeProcessing, result.EnableRangeProcessing);
         }
 
         [Fact]
@@ -598,6 +1695,33 @@ namespace Microsoft.AspNetCore.Mvc.Core.Test
             Assert.Same(fileContents, result.FileContents);
             Assert.Equal("application/pdf", result.ContentType.ToString());
             Assert.Equal("someDownloadName", result.FileDownloadName);
+            Assert.False(result.EnableRangeProcessing);
+        }
+
+        [Theory]
+        [InlineData(null, null, false)]
+        [InlineData(null, "\"Etag\"", false)]
+        [InlineData("05/01/2008 +1:00", null, true)]
+        [InlineData("05/01/2008 +1:00", "\"Etag\"", true)]
+        public void File_WithContentsAndFileDownloadName_LastModifiedAndEtag(string lastModifiedString, string entityTagString, bool enableRangeProcessing)
+        {
+            // Arrange
+            var controller = new TestableController();
+            var fileContents = new byte[0];
+            var lastModified = (lastModifiedString == null) ? (DateTimeOffset?)null : DateTimeOffset.Parse(lastModifiedString);
+            var entityTag = (entityTagString == null) ? null : new EntityTagHeaderValue(entityTagString);
+
+            // Act
+            var result = controller.File(fileContents, "application/pdf", "someDownloadName", lastModified, entityTag, enableRangeProcessing);
+
+            // Assert
+            Assert.NotNull(result);
+            Assert.Same(fileContents, result.FileContents);
+            Assert.Equal("application/pdf", result.ContentType.ToString());
+            Assert.Equal("someDownloadName", result.FileDownloadName);
+            Assert.Equal(lastModified, result.LastModified);
+            Assert.Equal(entityTag, result.EntityTag);
+            Assert.Equal(enableRangeProcessing, result.EnableRangeProcessing);
         }
 
         [Fact]
@@ -615,6 +1739,33 @@ namespace Microsoft.AspNetCore.Mvc.Core.Test
             Assert.Equal(path, result.FileName);
             Assert.Equal("application/pdf", result.ContentType.ToString());
             Assert.Equal(string.Empty, result.FileDownloadName);
+            Assert.False(result.EnableRangeProcessing);
+        }
+
+        [Theory]
+        [InlineData(null, null, false)]
+        [InlineData(null, "\"Etag\"", false)]
+        [InlineData("05/01/2008 +1:00", null, true)]
+        [InlineData("05/01/2008 +1:00", "\"Etag\"", true)]
+        public void File_WithPath_LastModifiedAndEtag(string lastModifiedString, string entityTagString, bool enableRangeProcessing)
+        {
+            // Arrange
+            var controller = new TestableController();
+            var path = Path.GetFullPath("somepath");
+            var lastModified = (lastModifiedString == null) ? (DateTimeOffset?)null : DateTimeOffset.Parse(lastModifiedString);
+            var entityTag = (entityTagString == null) ? null : new EntityTagHeaderValue(entityTagString);
+
+            // Act
+            var result = controller.File(path, "application/pdf", lastModified, entityTag, enableRangeProcessing);
+
+            // Assert
+            Assert.NotNull(result);
+            Assert.Equal(path, result.FileName);
+            Assert.Equal("application/pdf", result.ContentType.ToString());
+            Assert.Equal(string.Empty, result.FileDownloadName);
+            Assert.Equal(lastModified, result.LastModified);
+            Assert.Equal(entityTag, result.EntityTag);
+            Assert.Equal(enableRangeProcessing, result.EnableRangeProcessing);
         }
 
         [Fact]
@@ -632,6 +1783,33 @@ namespace Microsoft.AspNetCore.Mvc.Core.Test
             Assert.Equal(path, result.FileName);
             Assert.Equal("application/pdf", result.ContentType.ToString());
             Assert.Equal("someDownloadName", result.FileDownloadName);
+            Assert.False(result.EnableRangeProcessing);
+        }
+
+        [Theory]
+        [InlineData(null, null, false)]
+        [InlineData(null, "\"Etag\"", false)]
+        [InlineData("05/01/2008 +1:00", null, true)]
+        [InlineData("05/01/2008 +1:00", "\"Etag\"", true)]
+        public void File_WithPathAndFileDownloadName_LastModifiedAndEtag(string lastModifiedString, string entityTagString, bool enableRangeProcessing)
+        {
+            // Arrange
+            var controller = new TestableController();
+            var path = Path.GetFullPath("somepath");
+            var lastModified = (lastModifiedString == null) ? (DateTimeOffset?)null : DateTimeOffset.Parse(lastModifiedString);
+            var entityTag = (entityTagString == null) ? null : new EntityTagHeaderValue(entityTagString);
+
+            // Act
+            var result = controller.File(path, "application/pdf", "someDownloadName", lastModified, entityTag, enableRangeProcessing);
+
+            // Assert
+            Assert.NotNull(result);
+            Assert.Equal(path, result.FileName);
+            Assert.Equal("application/pdf", result.ContentType.ToString());
+            Assert.Equal("someDownloadName", result.FileDownloadName);
+            Assert.Equal(lastModified, result.LastModified);
+            Assert.Equal(entityTag, result.EntityTag);
+            Assert.Equal(enableRangeProcessing, result.EnableRangeProcessing);
         }
 
         [Fact]
@@ -654,6 +1832,38 @@ namespace Microsoft.AspNetCore.Mvc.Core.Test
             Assert.Same(fileStream, result.FileStream);
             Assert.Equal("application/pdf", result.ContentType.ToString());
             Assert.Equal(string.Empty, result.FileDownloadName);
+            Assert.False(result.EnableRangeProcessing);
+        }
+
+        [Theory]
+        [InlineData(null, null, false)]
+        [InlineData(null, "\"Etag\"", false)]
+        [InlineData("05/01/2008 +1:00", null, true)]
+        [InlineData("05/01/2008 +1:00", "\"Etag\"", true)]
+        public void File_WithStream_LastModifiedAndEtag(string lastModifiedString, string entityTagString, bool enableRangeProcessing)
+        {
+            // Arrange
+            var mockHttpContext = new Mock<HttpContext>();
+            mockHttpContext.Setup(x => x.Response.RegisterForDispose(It.IsAny<IDisposable>()));
+
+            var controller = new TestableController();
+            controller.ControllerContext.HttpContext = mockHttpContext.Object;
+
+            var fileStream = Stream.Null;
+            var lastModified = (lastModifiedString == null) ? (DateTimeOffset?)null : DateTimeOffset.Parse(lastModifiedString);
+            var entityTag = (entityTagString == null) ? null : new EntityTagHeaderValue(entityTagString);
+
+            // Act
+            var result = controller.File(fileStream, "application/pdf", lastModified, entityTag, enableRangeProcessing);
+
+            // Assert
+            Assert.NotNull(result);
+            Assert.Same(fileStream, result.FileStream);
+            Assert.Equal("application/pdf", result.ContentType.ToString());
+            Assert.Equal(string.Empty, result.FileDownloadName);
+            Assert.Equal(lastModified, result.LastModified);
+            Assert.Equal(entityTag, result.EntityTag);
+            Assert.Equal(enableRangeProcessing, result.EnableRangeProcessing);
         }
 
         [Fact]
@@ -675,6 +1885,37 @@ namespace Microsoft.AspNetCore.Mvc.Core.Test
             Assert.Same(fileStream, result.FileStream);
             Assert.Equal("application/pdf", result.ContentType.ToString());
             Assert.Equal("someDownloadName", result.FileDownloadName);
+            Assert.False(result.EnableRangeProcessing);
+        }
+
+        [Theory]
+        [InlineData(null, null, false)]
+        [InlineData(null, "\"Etag\"", false)]
+        [InlineData("05/01/2008 +1:00", null, true)]
+        [InlineData("05/01/2008 +1:00", "\"Etag\"", true)]
+        public void File_WithStreamAndFileDownloadName_LastModifiedAndEtag(string lastModifiedString, string entityTagString, bool enableRangeProcessing)
+        {
+            // Arrange
+            var mockHttpContext = new Mock<HttpContext>();
+
+            var controller = new TestableController();
+            controller.ControllerContext.HttpContext = mockHttpContext.Object;
+
+            var fileStream = Stream.Null;
+            var lastModified = (lastModifiedString == null) ? (DateTimeOffset?)null : DateTimeOffset.Parse(lastModifiedString);
+            var entityTag = (entityTagString == null) ? null : new EntityTagHeaderValue(entityTagString);
+
+            // Act
+            var result = controller.File(fileStream, "application/pdf", "someDownloadName", lastModified, entityTag, enableRangeProcessing);
+
+            // Assert
+            Assert.NotNull(result);
+            Assert.Same(fileStream, result.FileStream);
+            Assert.Equal("application/pdf", result.ContentType.ToString());
+            Assert.Equal("someDownloadName", result.FileDownloadName);
+            Assert.Equal(lastModified, result.LastModified);
+            Assert.Equal(entityTag, result.EntityTag);
+            Assert.Equal(enableRangeProcessing, result.EnableRangeProcessing);
         }
 
         [Fact]
@@ -777,7 +2018,100 @@ namespace Microsoft.AspNetCore.Mvc.Core.Test
             Assert.IsType<BadRequestObjectResult>(result);
             Assert.Equal(StatusCodes.Status400BadRequest, result.StatusCode);
             var errors = Assert.IsType<SerializableError>(result.Value);
-            Assert.Equal(0, errors.Count);
+            Assert.Empty(errors);
+        }
+
+        [Fact]
+        public void UnprocessableEntity_SetsStatusCode()
+        {
+            // Arrange
+            var controller = new TestableController();
+
+            // Act
+            var result = controller.UnprocessableEntity();
+
+            // Assert
+            Assert.IsType<UnprocessableEntityResult>(result);
+            Assert.Equal(StatusCodes.Status422UnprocessableEntity, result.StatusCode);
+        }
+
+        [Fact]
+        public void UnprocessableEntity_SetsStatusCodeAndValue_Object()
+        {
+            // Arrange
+            var controller = new TestableController();
+            var obj = new object();
+
+            // Act
+            var result = controller.UnprocessableEntity(obj);
+
+            // Assert
+            Assert.IsType<UnprocessableEntityObjectResult>(result);
+            Assert.Equal(StatusCodes.Status422UnprocessableEntity, result.StatusCode);
+            Assert.Equal(obj, result.Value);
+        }
+
+        [Fact]
+        public void UnprocessableEntity_SetsStatusCodeAndValue_ModelState()
+        {
+            // Arrange
+            var controller = new TestableController();
+
+            // Act
+            var result = controller.UnprocessableEntity(new ModelStateDictionary());
+
+            // Assert
+            Assert.IsType<UnprocessableEntityObjectResult>(result);
+            Assert.Equal(StatusCodes.Status422UnprocessableEntity, result.StatusCode);
+            var errors = Assert.IsType<SerializableError>(result.Value);
+            Assert.Empty(errors);
+        }
+
+        [Fact]
+        public void Conflict_SetsStatusCode()
+        {
+            // Arrange
+            var controller = new TestableController();
+            var obj = new object();
+
+            // Act
+            var result = controller.Conflict();
+
+            // Assert
+            Assert.IsType<ConflictResult>(result);
+            Assert.Equal(StatusCodes.Status409Conflict, result.StatusCode);
+        }
+
+        [Fact]
+        public void Conflict_SetsStatusCodeAndValue_Object()
+        {
+            // Arrange
+            var controller = new TestableController();
+            var obj = new object();
+
+            // Act
+            var result = controller.Conflict(obj);
+
+            // Assert
+            Assert.IsType<ConflictObjectResult>(result);
+            Assert.Equal(StatusCodes.Status409Conflict, result.StatusCode);
+            Assert.Equal(obj, result.Value);
+        }
+
+        [Fact]
+        public void Conflict_SetsStatusCodeAndValue_ModelState()
+        {
+            // Arrange
+            var controller = new TestableController();
+
+            // Act
+            var result = controller.Conflict(new ModelStateDictionary());
+
+            // Assert
+            Assert.IsType<ConflictObjectResult>(result);
+            Assert.Equal(StatusCodes.Status409Conflict, result.StatusCode);
+            var errors = Assert.IsType<SerializableError>(result.Value);
+            Assert.Empty(errors);
         }
 
         [Theory]
@@ -990,7 +2324,7 @@ namespace Microsoft.AspNetCore.Mvc.Core.Test
         public async Task TryUpdateModel_FallsBackOnEmptyPrefix_IfNotSpecified()
         {
             // Arrange
-            var metadataProvider = TestModelMetadataProvider.CreateDefaultProvider();
+            var metadataProvider = new EmptyModelMetadataProvider();
             var valueProvider = Mock.Of<IValueProvider>();
             var binder = new StubModelBinder(context =>
             {
@@ -1019,7 +2353,7 @@ namespace Microsoft.AspNetCore.Mvc.Core.Test
             // Arrange
             var modelName = "mymodel";
 
-            var metadataProvider = TestModelMetadataProvider.CreateDefaultProvider();
+            var metadataProvider = new EmptyModelMetadataProvider();
             var valueProvider = Mock.Of<IValueProvider>();
             var binder = new StubModelBinder(context =>
             {
@@ -1107,7 +2441,7 @@ namespace Microsoft.AspNetCore.Mvc.Core.Test
             // Arrange
             var modelName = "mymodel";
 
-            Func<ModelMetadata, bool> propertyFilter = (m) => 
+            Func<ModelMetadata, bool> propertyFilter = (m) =>
                 string.Equals(m.PropertyName, "Include1", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(m.PropertyName, "Include2", StringComparison.OrdinalIgnoreCase);
 
@@ -1207,7 +2541,7 @@ namespace Microsoft.AspNetCore.Mvc.Core.Test
             // Arrange
             var modelName = "mymodel";
 
-            Func<ModelMetadata, bool> propertyFilter = (m) => 
+            Func<ModelMetadata, bool> propertyFilter = (m) =>
                 string.Equals(m.PropertyName, "Include1", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(m.PropertyName, "Include2", StringComparison.OrdinalIgnoreCase);
 
@@ -1241,7 +2575,7 @@ namespace Microsoft.AspNetCore.Mvc.Core.Test
             // Arrange
             var modelName = "mymodel";
 
-            var metadataProvider = TestModelMetadataProvider.CreateDefaultProvider();
+            var metadataProvider = new EmptyModelMetadataProvider();
             var valueProvider = Mock.Of<IValueProvider>();
             var binder = new StubModelBinder(context =>
             {
@@ -1269,7 +2603,7 @@ namespace Microsoft.AspNetCore.Mvc.Core.Test
             // Arrange
             var modelName = "mymodel";
 
-            var metadataProvider = TestModelMetadataProvider.CreateDefaultProvider();
+            var metadataProvider = new EmptyModelMetadataProvider();
             var valueProvider = Mock.Of<IValueProvider>();
             var binder = new StubModelBinder(context =>
             {
@@ -1375,7 +2709,8 @@ namespace Microsoft.AspNetCore.Mvc.Core.Test
             var controller = GetController(binder, valueProvider: null);
             controller.ObjectValidator = new DefaultObjectValidator(
                 controller.MetadataProvider,
-                new[] { Mock.Of<IModelValidatorProvider>() });
+                new[] { Mock.Of<IModelValidatorProvider>() },
+                new MvcOptions());
 
             var model = new TryValidateModelModel();
 
@@ -1411,14 +2746,15 @@ namespace Microsoft.AspNetCore.Mvc.Core.Test
             var controller = GetController(binder, valueProvider: null);
             controller.ObjectValidator = new DefaultObjectValidator(
                 controller.MetadataProvider,
-                new[] { provider.Object });
+                new[] { provider.Object },
+                new MvcOptions());
 
             // Act
             var result = controller.TryValidateModel(model, "Prefix");
 
             // Assert
             Assert.False(result);
-            Assert.Equal(1, controller.ModelState.Count);
+            Assert.Single(controller.ModelState);
             var error = Assert.Single(controller.ModelState["Prefix.IntegerProperty"].Errors);
             Assert.Equal("Out of range!", error.ErrorMessage);
         }
@@ -1446,15 +2782,16 @@ namespace Microsoft.AspNetCore.Mvc.Core.Test
             var binder = new StubModelBinder();
             var controller = GetController(binder, valueProvider: null);
             controller.ObjectValidator = new DefaultObjectValidator(
-                controller.MetadataProvider, 
-                new[] { provider.Object });
+                controller.MetadataProvider,
+                new[] { provider.Object },
+                new MvcOptions());
 
             // Act
             var result = controller.TryValidateModel(model);
 
             // Assert
             Assert.False(result);
-            Assert.Equal(1, controller.ModelState.Count);
+            Assert.Single(controller.ModelState);
             var error = Assert.Single(controller.ModelState["IntegerProperty"].Errors);
             Assert.Equal("Out of range!", error.ErrorMessage);
         }
@@ -1475,16 +2812,42 @@ namespace Microsoft.AspNetCore.Mvc.Core.Test
             Assert.True(controller.ModelState.IsValid);
         }
 
+        [Fact]
+        public void RedirectToPage_WithPageName_Handler_AndRouteValues()
+        {
+            // Arrange
+            var controller = new TestableController();
+
+            // Act
+            var result = controller.RedirectToPage("page", "handler", new { test = "value" });
+
+            // Assert
+            Assert.Equal("page", result.PageName);
+            Assert.Equal("handler", result.PageHandler);
+            Assert.Collection(result.RouteValues,
+                item =>
+                {
+                    Assert.Equal("test", item.Key);
+                    Assert.Equal("value", item.Value);
+                });
+        }
+
         private static ControllerBase GetController(IModelBinder binder, IValueProvider valueProvider)
         {
-            var metadataProvider = TestModelMetadataProvider.CreateDefaultProvider();
-            var httpContext = new DefaultHttpContext();
+            var metadataProvider = new EmptyModelMetadataProvider();
+            var services = new ServiceCollection();
+            services.AddSingleton<ILoggerFactory>(NullLoggerFactory.Instance);
+
+            var httpContext = new DefaultHttpContext()
+            {
+                RequestServices = services.BuildServiceProvider()
+            };
 
             var validatorProviders = new[]
             {
                 new DataAnnotationsModelValidatorProvider(
                     new ValidationAttributeAdapterProvider(),
-                    new TestOptionsManager<MvcDataAnnotationsLocalizationOptions>(),
+                    Options.Create(new MvcDataAnnotationsLocalizationOptions()),
                     stringLocalizerFactory: null),
             };
 
@@ -1505,7 +2868,7 @@ namespace Microsoft.AspNetCore.Mvc.Core.Test
                 ControllerContext = controllerContext,
                 MetadataProvider = metadataProvider,
                 ModelBinderFactory = binderFactory.Object,
-                ObjectValidator = new DefaultObjectValidator(metadataProvider, validatorProviders),
+                ObjectValidator = new DefaultObjectValidator(metadataProvider, validatorProviders, new MvcOptions()),
             };
 
             return controller;

@@ -15,14 +15,21 @@ namespace Microsoft.AspNetCore.Mvc
     [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method, Inherited = true, AllowMultiple = false)]
     public class RequireHttpsAttribute : Attribute, IAuthorizationFilter, IOrderedFilter
     {
+        private bool? _permanent;
+
         /// <summary>
         /// Specifies whether a permanent redirect, <c>301 Moved Permanently</c>,
         /// should be used instead of a temporary redirect, <c>302 Found</c>.
         /// </summary>
-        public bool Permanent { get; set; }
+        public bool Permanent
+        {
+            get { return _permanent ?? false; }
+            set { _permanent = value; }
+        }
 
         /// <inheritdoc />
-        public int Order { get; set; }
+        /// <value>Default is <c>int.MinValue + 50</c> to run this <see cref="IAuthorizationFilter"/> early.</value>
+        public int Order { get; set; } = int.MinValue + 50;
 
         /// <summary>
         /// Called early in the filter pipeline to confirm request is authorized. Confirms requests are received over
@@ -82,6 +89,8 @@ namespace Microsoft.AspNetCore.Mvc
                     host = new HostString(host.Host);
                 }
 
+                var permanentValue = _permanent ?? optionsAccessor.Value.RequireHttpsPermanent;
+
                 var newUrl = string.Concat(
                     "https://",
                     host.ToUriComponent(),
@@ -90,7 +99,7 @@ namespace Microsoft.AspNetCore.Mvc
                     request.QueryString.ToUriComponent());
 
                 // redirect to HTTPS version of page
-                filterContext.Result = new RedirectResult(newUrl, Permanent);
+                filterContext.Result = new RedirectResult(newUrl, permanentValue);
             }
         }
     }

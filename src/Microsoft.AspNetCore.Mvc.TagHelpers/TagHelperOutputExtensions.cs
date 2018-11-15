@@ -3,7 +3,11 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
 using System.Linq;
+using System.Text.Encodings.Web;
+using Microsoft.AspNetCore.Html;
 using Microsoft.AspNetCore.Mvc.Rendering;
 using Microsoft.AspNetCore.Razor.TagHelpers;
 
@@ -14,6 +18,8 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
     /// </summary>
     public static class TagHelperOutputExtensions
     {
+        private static readonly char[] SpaceChars = { '\u0020', '\u0009', '\u000A', '\u000C', '\u000D' };
+
         /// <summary>
         /// Copies a user-provided attribute from <paramref name="context"/>'s
         /// <see cref="TagHelperContext.AllAttributes"/> to <paramref name="tagHelperOutput"/>'s
@@ -58,7 +64,7 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
                 var copiedAttribute = false;
 
                 // We iterate context.AllAttributes backwards since we prioritize TagHelperOutput values occurring
-                // before the current context.AllAttribtes[i].
+                // before the current context.AllAttributes[i].
                 for (var i = context.AllAttributes.Count - 1; i >= 0; i--)
                 {
                     // We look for the original attribute so we can restore the exact attribute name the user typed in
@@ -90,9 +96,7 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
         /// <param name="tagBuilder">The <see cref="TagBuilder"/> to merge attributes from.</param>
         /// <remarks>Existing <see cref="TagHelperOutput.Attributes"/> on the given <paramref name="tagHelperOutput"/>
         /// are not overridden; "class" attributes are merged with spaces.</remarks>
-        public static void MergeAttributes(
-            this TagHelperOutput tagHelperOutput,
-            TagBuilder tagBuilder)
+        public static void MergeAttributes(this TagHelperOutput tagHelperOutput, TagBuilder tagBuilder)
         {
             if (tagHelperOutput == null)
             {
@@ -110,18 +114,17 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
                 {
                     tagHelperOutput.Attributes.Add(attribute.Key, attribute.Value);
                 }
-                else if (attribute.Key.Equals("class", StringComparison.OrdinalIgnoreCase))
+                else if (string.Equals(attribute.Key, "class", StringComparison.OrdinalIgnoreCase))
                 {
-                    TagHelperAttribute classAttribute;
+                    var found = tagHelperOutput.Attributes.TryGetAttribute("class", out var classAttribute);
+                    Debug.Assert(found);
 
-                    if (tagHelperOutput.Attributes.TryGetAttribute("class", out classAttribute))
-                    {
-                        tagHelperOutput.Attributes.SetAttribute("class", classAttribute.Value + " " + attribute.Value);
-                    }
-                    else
-                    {
-                        tagHelperOutput.Attributes.Add("class", attribute.Value);
-                    }
+                    var newAttribute = new TagHelperAttribute(
+                        classAttribute.Name,
+                        new ClassAttributeHtmlContent(classAttribute.Value, attribute.Value),
+                        classAttribute.ValueStyle);
+
+                    tagHelperOutput.Attributes.SetAttribute(newAttribute);
                 }
             }
         }
@@ -150,6 +153,167 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
             {
                 tagHelperOutput.Attributes.Remove(attribute);
             }
+        }
+
+        /// <summary>
+        /// Adds the given <paramref name="classValue"/> to the <paramref name="tagHelperOutput"/>'s
+        /// <see cref="TagHelperOutput.Attributes"/>.
+        /// </summary>
+        /// <param name="tagHelperOutput">The <see cref="TagHelperOutput"/> this method extends.</param>
+        /// <param name="classValue">The class value to add.</param>
+        /// <param name="htmlEncoder">The current HTML encoder.</param>
+        public static void AddClass(
+            this TagHelperOutput tagHelperOutput,
+            string classValue,
+            HtmlEncoder htmlEncoder)
+        {
+            if (tagHelperOutput == null)
+            {
+                throw new ArgumentNullException(nameof(tagHelperOutput));
+            }
+
+            if (string.IsNullOrEmpty(classValue))
+            {
+                return;
+            }
+
+            var encodedSpaceChars = SpaceChars.Where(x => !x.Equals('\u0020')).Select(x => htmlEncoder.Encode(x.ToString())).ToArray();
+
+            if (SpaceChars.Any(classValue.Contains) || encodedSpaceChars.Any(value => classValue.IndexOf(value, StringComparison.Ordinal) >= 0))
+            {
+                throw new ArgumentException(Resources.ArgumentCannotContainHtmlSpace, nameof(classValue));
+            }
+
+            if (!tagHelperOutput.Attributes.TryGetAttribute("class", out TagHelperAttribute classAttribute))
+            {
+                tagHelperOutput.Attributes.Add("class", classValue);
+            }
+            else
+            {
+                var currentClassValue = ExtractClassValue(classAttribute, htmlEncoder);
+
+                var encodedClassValue = htmlEncoder.Encode(classValue);
+
+                if (string.Equals(currentClassValue, encodedClassValue, StringComparison.Ordinal))
+                {
+                    return;
+                }
+
+                var arrayOfClasses = currentClassValue.Split(SpaceChars, StringSplitOptions.RemoveEmptyEntries)
+                    .SelectMany(perhapsEncoded => perhapsEncoded.Split(encodedSpaceChars, StringSplitOptions.RemoveEmptyEntries))
+                    .ToArray();
+
+                if (arrayOfClasses.Contains(encodedClassValue, StringComparer.Ordinal))
+                {
+                    return;
+                }
+
+                var newClassAttribute = new TagHelperAttribute(
+                    classAttribute.Name,
+                    new HtmlString($"{currentClassValue} {encodedClassValue}"),
+                    classAttribute.ValueStyle);
+
+                tagHelperOutput.Attributes.SetAttribute(newClassAttribute);
+            }
+        }
+
+        /// <summary>
+        /// Removes the given <paramref name="classValue"/> from the <paramref name="tagHelperOutput"/>'s
+        /// <see cref="TagHelperOutput.Attributes"/>.
+        /// </summary>
+        /// <param name="tagHelperOutput">The <see cref="TagHelperOutput"/> this method extends.</param>
+        /// <param name="classValue">The class value to remove.</param>
+        /// <param name="htmlEncoder">The current HTML encoder.</param>
+        public static void RemoveClass(
+            this TagHelperOutput tagHelperOutput,
+            string classValue,
+            HtmlEncoder htmlEncoder)
+        {
+            if (tagHelperOutput == null)
+            {
+                throw new ArgumentNullException(nameof(tagHelperOutput));
+            }
+
+            var encodedSpaceChars = SpaceChars.Where(x => !x.Equals('\u0020')).Select(x => htmlEncoder.Encode(x.ToString())).ToArray();
+
+            if (SpaceChars.Any(classValue.Contains) || encodedSpaceChars.Any(value => classValue.IndexOf(value, StringComparison.Ordinal) >= 0))
+            {
+                throw new ArgumentException(Resources.ArgumentCannotContainHtmlSpace, nameof(classValue));
+            }
+
+            if (!tagHelperOutput.Attributes.TryGetAttribute("class", out TagHelperAttribute classAttribute))
+            {
+                return;
+            }
+
+            var currentClassValue = ExtractClassValue(classAttribute, htmlEncoder);
+
+            if (string.IsNullOrEmpty(currentClassValue))
+            {
+                return;
+            }
+
+            var encodedClassValue = htmlEncoder.Encode(classValue);
+
+            if (string.Equals(currentClassValue, encodedClassValue, StringComparison.Ordinal))
+            {
+                tagHelperOutput.Attributes.Remove(tagHelperOutput.Attributes["class"]);
+                return;
+            }
+
+            if (!currentClassValue.Contains(encodedClassValue))
+            {
+                return;
+            }
+
+            var listOfClasses = currentClassValue.Split(SpaceChars, StringSplitOptions.RemoveEmptyEntries)
+                .SelectMany(perhapsEncoded => perhapsEncoded.Split(encodedSpaceChars, StringSplitOptions.RemoveEmptyEntries))
+                .ToList();
+
+            if (!listOfClasses.Contains(encodedClassValue))
+            {
+                return;
+            }
+
+            listOfClasses.RemoveAll(x => x.Equals(encodedClassValue));
+
+            if (listOfClasses.Any())
+            {
+                var joinedClasses = new HtmlString(string.Join(" ", listOfClasses));
+                tagHelperOutput.Attributes.SetAttribute(classAttribute.Name, joinedClasses);
+            }
+            else
+            {
+                tagHelperOutput.Attributes.Remove(tagHelperOutput.Attributes["class"]);
+            }
+        }
+
+        private static string ExtractClassValue(
+            TagHelperAttribute classAttribute,
+            HtmlEncoder htmlEncoder)
+        {
+            string extractedClassValue;
+            switch (classAttribute.Value)
+            {
+                case string valueAsString:
+                    extractedClassValue = htmlEncoder.Encode(valueAsString);
+                    break;
+                case HtmlString valueAsHtmlString:
+                    extractedClassValue = valueAsHtmlString.Value;
+                    break;
+                case IHtmlContent htmlContent:
+                    using (var stringWriter = new StringWriter())
+                    {
+                        htmlContent.WriteTo(stringWriter, htmlEncoder);
+                        extractedClassValue = stringWriter.ToString();
+                    }
+                    break;
+                default:
+                    extractedClassValue = htmlEncoder.Encode(classAttribute.Value?.ToString());
+                    break;
+            }
+            var currentClassValue = extractedClassValue ?? string.Empty;
+            return currentClassValue;
         }
 
         private static void CopyHtmlAttribute(
@@ -200,6 +364,63 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
             }
 
             return -1;
+        }
+
+        private class ClassAttributeHtmlContent : IHtmlContent
+        {
+            private readonly object _left;
+            private readonly string _right;
+
+            public ClassAttributeHtmlContent(object left, string right)
+            {
+                _left = left;
+                _right = right;
+            }
+
+            public void WriteTo(TextWriter writer, HtmlEncoder encoder)
+            {
+                if (writer == null)
+                {
+                    throw new ArgumentNullException(nameof(writer));
+                }
+
+                if (encoder == null)
+                {
+                    throw new ArgumentNullException(nameof(encoder));
+                }
+
+                // Write out "{left} {right}" in the common nothing-empty case.
+                var wroteLeft = false;
+                if (_left != null)
+                {
+                    if (_left is IHtmlContent htmlContent)
+                    {
+                        // Ignore case where htmlContent is HtmlString.Empty. At worst, will add a leading space to the
+                        // generated attribute value.
+                        htmlContent.WriteTo(writer, encoder);
+                        wroteLeft = true;
+                    }
+                    else
+                    {
+                        var stringValue = _left.ToString();
+                        if (!string.IsNullOrEmpty(stringValue))
+                        {
+                            encoder.Encode(writer, stringValue);
+                            wroteLeft = true;
+                        }
+                    }
+                }
+
+                if (!string.IsNullOrEmpty(_right))
+                {
+                    if (wroteLeft)
+                    {
+                        writer.Write(' ');
+                    }
+
+                    encoder.Encode(writer, _right);
+                }
+            }
         }
     }
 }

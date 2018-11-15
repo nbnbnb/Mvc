@@ -3,7 +3,6 @@
 
 using System;
 using System.Globalization;
-using Microsoft.AspNetCore.Mvc.Internal;
 using Microsoft.AspNetCore.Routing;
 
 namespace Microsoft.AspNetCore.Mvc.ModelBinding
@@ -21,9 +20,21 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
         /// </summary>
         /// <param name="bindingSource">The <see cref="BindingSource"/> of the data.</param>
         /// <param name="values">The values.</param>
+        /// <remarks>Sets <see cref="Culture"/> to <see cref="CultureInfo.InvariantCulture" />.</remarks>
         public RouteValueProvider(
             BindingSource bindingSource,
             RouteValueDictionary values)
+            : this(bindingSource, values, CultureInfo.InvariantCulture)
+        {
+        }
+
+        /// <summary>
+        /// Creates a new <see cref="RouteValueProvider"/>.
+        /// </summary>
+        /// <param name="bindingSource">The <see cref="BindingSource"/> of the data.</param>
+        /// <param name="values">The values.</param>
+        /// <param name="culture">The culture for route value.</param>
+        public RouteValueProvider(BindingSource bindingSource, RouteValueDictionary values, CultureInfo culture)
             : base(bindingSource)
         {
             if (bindingSource == null)
@@ -36,7 +47,13 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
                 throw new ArgumentNullException(nameof(values));
             }
 
+            if (culture == null)
+            {
+                throw new ArgumentNullException(nameof(culture));
+            }
+
             _values = values;
+            Culture = culture;
         }
 
         protected PrefixContainer PrefixContainer
@@ -52,6 +69,8 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             }
         }
 
+        protected CultureInfo Culture { get; }
+
         /// <inheritdoc />
         public override bool ContainsPrefix(string key)
         {
@@ -66,11 +85,10 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
                 throw new ArgumentNullException(nameof(key));
             }
 
-            object value;
-            if (_values.TryGetValue(key, out value))
+            if (_values.TryGetValue(key, out var value))
             {
-                var stringValue = value as string ?? value?.ToString() ?? string.Empty;
-                return new ValueProviderResult(stringValue, CultureInfo.InvariantCulture);
+                var stringValue = value as string ?? Convert.ToString(value, Culture) ?? string.Empty;
+                return new ValueProviderResult(stringValue, Culture);
             }
             else
             {

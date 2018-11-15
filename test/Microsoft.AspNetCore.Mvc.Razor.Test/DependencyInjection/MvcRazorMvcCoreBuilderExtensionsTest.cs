@@ -5,11 +5,8 @@ using System.Collections.Generic;
 using System.Linq;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.ApplicationParts;
-using Microsoft.AspNetCore.Mvc.Internal;
 using Microsoft.AspNetCore.Mvc.Razor.Compilation;
-using Microsoft.AspNetCore.Mvc.Razor.Internal;
 using Microsoft.AspNetCore.Mvc.Razor.TagHelpers;
-using Microsoft.AspNetCore.Razor.Runtime.TagHelpers;
 using Microsoft.AspNetCore.Razor.TagHelpers;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
@@ -67,7 +64,9 @@ namespace Microsoft.AspNetCore.Mvc.Razor.Test.DependencyInjection
             builder.AddRazorViewEngine();
 
             // Assert
+#pragma warning disable CS0618 // Type or member is obsolete
             Assert.Single(builder.PartManager.FeatureProviders.OfType<MetadataReferenceFeatureProvider>());
+#pragma warning restore CS0618 // Type or member is obsolete
         }
 
         [Fact]
@@ -84,7 +83,9 @@ namespace Microsoft.AspNetCore.Mvc.Razor.Test.DependencyInjection
             builder.AddRazorViewEngine();
 
             // Assert
+#pragma warning disable CS0618 // Type or member is obsolete
             Assert.Single(builder.PartManager.FeatureProviders.OfType<MetadataReferenceFeatureProvider>());
+#pragma warning restore CS0618 // Type or member is obsolete
         }
 
         [Fact]
@@ -93,7 +94,9 @@ namespace Microsoft.AspNetCore.Mvc.Razor.Test.DependencyInjection
             // Arrange
             var services = new ServiceCollection();
             var builder = services.AddMvcCore();
+#pragma warning disable CS0618 // Type or member is obsolete
             var metadataReferenceFeatureProvider = new MetadataReferenceFeatureProvider();
+#pragma warning restore CS0618 // Type or member is obsolete
             builder.PartManager.FeatureProviders.Add(metadataReferenceFeatureProvider);
 
             // Act
@@ -101,7 +104,9 @@ namespace Microsoft.AspNetCore.Mvc.Razor.Test.DependencyInjection
 
             // Assert
             var actual = Assert.Single(
-                builder.PartManager.FeatureProviders.OfType<MetadataReferenceFeatureProvider>());
+#pragma warning disable CS0618 // Type or member is obsolete
+                collection: builder.PartManager.FeatureProviders.OfType<MetadataReferenceFeatureProvider>());
+#pragma warning restore CS0618 // Type or member is obsolete
             Assert.Same(metadataReferenceFeatureProvider, actual);
         }
 
@@ -115,7 +120,6 @@ namespace Microsoft.AspNetCore.Mvc.Razor.Test.DependencyInjection
                 .ConfigureApplicationPartManager(manager =>
                 {
                     manager.ApplicationParts.Add(new TestApplicationPart());
-                    manager.FeatureProviders.Add(new TagHelperFeatureProvider());
                 });
 
             // Act
@@ -124,9 +128,6 @@ namespace Microsoft.AspNetCore.Mvc.Razor.Test.DependencyInjection
             // Assert
             var activatorDescriptor = Assert.Single(services.ToList(), d => d.ServiceType == typeof(ITagHelperActivator));
             Assert.Equal(typeof(ServiceBasedTagHelperActivator), activatorDescriptor.ImplementationType);
-
-            var resolverDescriptor = Assert.Single(services.ToList(), d => d.ServiceType == typeof(ITagHelperTypeResolver));
-            Assert.Equal(typeof(FeatureTagHelperTypeResolver), resolverDescriptor.ImplementationType);
         }
 
         [Fact]
@@ -149,7 +150,7 @@ namespace Microsoft.AspNetCore.Mvc.Razor.Test.DependencyInjection
 
             // Assert
             var collection = services.ToList();
-            Assert.Equal(4, collection.Count);
+            Assert.Equal(3, collection.Count);
 
             var tagHelperOne = Assert.Single(collection, t => t.ServiceType == typeof(TestTagHelperOne));
             Assert.Equal(typeof(TestTagHelperOne), tagHelperOne.ImplementationType);
@@ -162,10 +163,6 @@ namespace Microsoft.AspNetCore.Mvc.Razor.Test.DependencyInjection
             var activator = Assert.Single(collection, t => t.ServiceType == typeof(ITagHelperActivator));
             Assert.Equal(typeof(ServiceBasedTagHelperActivator), activator.ImplementationType);
             Assert.Equal(ServiceLifetime.Transient, activator.Lifetime);
-
-            var typeResolver = Assert.Single(collection, t => t.ServiceType == typeof(ITagHelperTypeResolver));
-            Assert.Equal(typeof(FeatureTagHelperTypeResolver), typeResolver.ImplementationType);
-            Assert.Equal(ServiceLifetime.Transient, typeResolver.Lifetime);
         }
 
         private class TestTagHelperOne : TagHelper

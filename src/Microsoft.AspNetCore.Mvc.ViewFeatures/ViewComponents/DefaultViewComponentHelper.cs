@@ -2,13 +2,14 @@
 // Licensed under the Apache License, Version 2.0. See License.txt in the project root for license information.
 
 using System;
+using System.Collections.Generic;
 using System.Reflection;
 using System.Text.Encodings.Web;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Html;
 using Microsoft.AspNetCore.Mvc.Rendering;
 using Microsoft.AspNetCore.Mvc.ViewFeatures;
-using Microsoft.AspNetCore.Mvc.ViewFeatures.Internal;
+using Microsoft.AspNetCore.Mvc.ViewFeatures.Buffers;
 using Microsoft.Extensions.Internal;
 
 namespace Microsoft.AspNetCore.Mvc.ViewComponents
@@ -40,7 +41,8 @@ namespace Microsoft.AspNetCore.Mvc.ViewComponents
             HtmlEncoder htmlEncoder,
             IViewComponentSelector selector,
             IViewComponentInvokerFactory invokerFactory,
-            IViewBufferScope viewBufferScope)
+            IViewBufferScope viewBufferScope
+            )
         {
             if (descriptorProvider == null)
             {
@@ -96,7 +98,11 @@ namespace Microsoft.AspNetCore.Mvc.ViewComponents
             var descriptor = _selector.SelectComponent(name);
             if (descriptor == null)
             {
-                throw new InvalidOperationException(Resources.FormatViewComponent_CannotFindComponent(name));
+                throw new InvalidOperationException(Resources.FormatViewComponent_CannotFindComponent(
+                    name,
+                    nameof(ViewComponentAttribute),
+                    ViewComponentConventions.ViewComponentSuffix,
+                    nameof(NonViewComponentAttribute)));
             }
 
             return InvokeCoreAsync(descriptor, arguments);
@@ -127,22 +133,37 @@ namespace Microsoft.AspNetCore.Mvc.ViewComponents
             }
 
             throw new InvalidOperationException(Resources.FormatViewComponent_CannotFindComponent(
-                componentType.FullName));
+                componentType.FullName,
+                nameof(ViewComponentAttribute),
+                ViewComponentConventions.ViewComponentSuffix,
+                nameof(NonViewComponentAttribute)));
         }
 
-        private async Task<IHtmlContent> InvokeCoreAsync(
-            ViewComponentDescriptor descriptor,
-            object arguments)
+        // Internal for testing
+        internal IDictionary<string, object> GetArgumentDictionary(ViewComponentDescriptor descriptor, object arguments)
         {
+            if (arguments != null)
+            {
+                if (descriptor.Parameters.Count == 1 && descriptor.Parameters[0].ParameterType.IsAssignableFrom(arguments.GetType()))
+                {
+                    return new Dictionary<string, object>(capacity: 1, comparer: StringComparer.OrdinalIgnoreCase)
+                    {
+                        { descriptor.Parameters[0].Name, arguments }
+                    };
+                }
+            }
+
+            return PropertyHelper.ObjectToDictionary(arguments);
+        }
+
+        private async Task<IHtmlContent> InvokeCoreAsync(ViewComponentDescriptor descriptor, object arguments)
+        {
+            var argumentDictionary = GetArgumentDictionary(descriptor, arguments);
+
             var viewBuffer = new ViewBuffer(_viewBufferScope, descriptor.FullName, ViewBuffer.ViewComponentPageSize);
             using (var writer = new ViewBufferTextWriter(viewBuffer, _viewContext.Writer.Encoding))
             {
-                var context = new ViewComponentContext(
-                    descriptor,
-                    PropertyHelper.ObjectToDictionary(arguments),
-                    _htmlEncoder,
-                    _viewContext,
-                    writer);
+                var context = new ViewComponentContext(descriptor, argumentDictionary, _htmlEncoder, _viewContext, writer);
 
                 var invoker = _invokerFactory.CreateInstance(context);
                 if (invoker == null)

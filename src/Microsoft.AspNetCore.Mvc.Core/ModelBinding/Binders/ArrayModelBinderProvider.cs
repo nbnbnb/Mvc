@@ -2,6 +2,9 @@
 // Licensed under the Apache License, Version 2.0. See License.txt in the project root for license information.
 
 using System;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Microsoft.AspNetCore.Mvc.ModelBinding.Binders
 {
@@ -18,15 +21,19 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Binders
                 throw new ArgumentNullException(nameof(context));
             }
 
-            // We don't support binding readonly properties of arrays because we can't resize the
-            // existing value.
-            if (context.Metadata.ModelType.IsArray && !context.Metadata.IsReadOnly)
+            if (context.Metadata.ModelType.IsArray)
             {
                 var elementType = context.Metadata.ElementMetadata.ModelType;
                 var elementBinder = context.CreateBinder(context.Metadata.ElementMetadata);
 
                 var binderType = typeof(ArrayModelBinder<>).MakeGenericType(elementType);
-                return (IModelBinder)Activator.CreateInstance(binderType, elementBinder);
+                var loggerFactory = context.Services.GetRequiredService<ILoggerFactory>();
+                var mvcOptions = context.Services.GetRequiredService<IOptions<MvcOptions>>().Value;
+                return (IModelBinder)Activator.CreateInstance(
+                    binderType,
+                    elementBinder,
+                    loggerFactory,
+                    mvcOptions.AllowValidatingTopLevelNodes);
             }
 
             return null;

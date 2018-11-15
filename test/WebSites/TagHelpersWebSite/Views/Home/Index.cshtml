@@ -2,7 +2,6 @@
 @using Microsoft.AspNetCore.Mvc.Razor
 
 @model WebsiteContext
-
 @{
     ViewBag.Title = "Home Page";
 }
@@ -41,6 +40,11 @@
             "Tag Cloud from Template: ",
             @<div condition="true"><h3>@item</h3><tag-cloud count="Model.TagsToShow"></tag-cloud></div>);
     }
+</div>
+
+<div>
+    <h3>Dictionary Valued Model Expression</h3>
+    <div prefix-test1="@Model.TagsToShow" prefix-test2="@Model.Version.Build"></div>
 </div>
 
 @section footerContent {

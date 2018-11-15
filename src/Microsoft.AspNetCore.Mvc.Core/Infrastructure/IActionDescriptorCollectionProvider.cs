@@ -1,19 +1,28 @@
 // Copyright (c) .NET Foundation. All rights reserved.
 // Licensed under the Apache License, Version 2.0. See License.txt in the project root for license information.
 
+using Microsoft.Extensions.Primitives;
+
 namespace Microsoft.AspNetCore.Mvc.Infrastructure
 {
     /// <summary>
     /// Provides the currently cached collection of <see cref="Abstractions.ActionDescriptor"/>.
     /// </summary>
     /// <remarks>
-    /// The default implementation, does not update the cache, it is up to the user
-    /// to create or use an implementation that can update the available actions in
-    /// the application. The implementor is also responsible for updating the
-    /// <see cref="ActionDescriptorCollection.Version"/> in a thread safe way.
-    ///
+    /// <para>
+    /// The default implementation internally caches the collection and uses
+    /// <see cref="IActionDescriptorChangeProvider"/> to invalidate this cache, incrementing
+    /// <see cref="ActionDescriptorCollection.Version"/> the collection is reconstructed.
+    ///</para>
+    ///<para>
+    /// To be reactively notified of changes, downcast to <see cref="ActionDescriptorCollectionProvider"/> and
+    /// subscribe to the change token returned from <see cref="ActionDescriptorCollectionProvider.GetChangeToken"/>
+    /// using <see cref="ChangeToken.OnChange(System.Func{IChangeToken}, System.Action)"/>.
+    /// </para>
+    /// <para>
     /// Default consumers of this service, are aware of the version and will recache
     /// data as appropriate, but rely on the version being unique.
+    /// </para>
     /// </remarks>
     public interface IActionDescriptorCollectionProvider
     {

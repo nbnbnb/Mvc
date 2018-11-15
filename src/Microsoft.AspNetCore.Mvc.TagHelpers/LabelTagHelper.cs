@@ -27,13 +27,7 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
         }
 
         /// <inheritdoc />
-        public override int Order
-        {
-            get
-            {
-                return -1000;
-            }
-        }
+        public override int Order => -1000;
 
         [HtmlAttributeNotBound]
         [ViewContext]
@@ -72,17 +66,20 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
             {
                 output.MergeAttributes(tagBuilder);
 
-                // We check for whitespace to detect scenarios such as:
-                // <label for="Name">
-                // </label>
+                // Do not update the content if another tag helper targeting this element has already done so.
                 if (!output.IsContentModified)
                 {
+                    // We check for whitespace to detect scenarios such as:
+                    // <label for="Name">
+                    // </label>
                     var childContent = await output.GetChildContentAsync();
-
                     if (childContent.IsEmptyOrWhiteSpace)
                     {
-                        // Provide default label text since there was nothing useful in the Razor source.
-                        output.Content.SetHtmlContent(tagBuilder.InnerHtml);
+                        // Provide default label text (if any) since there was nothing useful in the Razor source.
+                        if (tagBuilder.HasInnerHtml)
+                        {
+                            output.Content.SetHtmlContent(tagBuilder.InnerHtml);
+                        }
                     }
                     else
                     {

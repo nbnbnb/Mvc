@@ -15,7 +15,7 @@ using Xunit;
 
 namespace Microsoft.AspNetCore.Mvc
 {
-    // Tests Controler for the unit testability with which users can simply instantiate contollers for unit tests
+    // Tests Controller for the unit testability with which users can simply instantiate controllers for unit tests
     public class ControllerUnitTestabilityTests
     {
         [Theory]
@@ -34,15 +34,10 @@ namespace Microsoft.AspNetCore.Mvc
             var viewResult = Assert.IsType<ViewResult>(result);
             Assert.Equal(viewName, viewResult.ViewName);
             Assert.NotNull(viewResult.ViewData);
+            Assert.Same(model, viewResult.Model);
             Assert.Same(model, viewResult.ViewData.Model);
             Assert.Same(controller.ViewData, viewResult.ViewData);
             Assert.Same(controller.TempData, viewResult.TempData);
-
-            if (model != null)
-            {
-                Assert.IsType(model.GetType(), viewResult.ViewData.Model);
-                Assert.NotNull(viewResult.ViewData.Model);
-            }
         }
 
         [Theory]
@@ -61,15 +56,10 @@ namespace Microsoft.AspNetCore.Mvc
             var viewResult = Assert.IsType<PartialViewResult>(result);
             Assert.Equal(viewName, viewResult.ViewName);
             Assert.NotNull(viewResult.ViewData);
+            Assert.Same(model, viewResult.Model);
             Assert.Same(model, viewResult.ViewData.Model);
             Assert.Same(controller.ViewData, viewResult.ViewData);
             Assert.Same(controller.TempData, viewResult.TempData);
-
-            if (model != null)
-            {
-                Assert.IsType(model.GetType(), viewResult.ViewData.Model);
-                Assert.NotNull(viewResult.ViewData.Model);
-            }
         }
 
         [Fact]
@@ -111,6 +101,26 @@ namespace Microsoft.AspNetCore.Mvc
             Assert.Equal(uri, createdResult.Location);
             Assert.Equal(content, createdResult.Value);
             Assert.Equal(StatusCodes.Status201Created, createdResult.StatusCode);
+        }
+
+        [Theory]
+        [InlineData("/Accepted_1", "<html>AcceptedBody</html>")]
+        [InlineData("/Accepted_2", null)]
+        public void ControllerAccepted_InvokedInUnitTests(string uri, string content)
+        {
+            // Arrange
+            var controller = new TestabilityController();
+
+            // Act
+            var result = controller.Accepted_Action(uri, content);
+
+            // Assert
+            Assert.NotNull(result);
+
+            var acceptedResult = Assert.IsType<AcceptedResult>(result);
+            Assert.Equal(uri, acceptedResult.Location);
+            Assert.Equal(content, acceptedResult.Value);
+            Assert.Equal(StatusCodes.Status202Accepted, acceptedResult.StatusCode);
         }
 
         [Fact]
@@ -346,6 +356,42 @@ namespace Microsoft.AspNetCore.Mvc
         }
 
         [Fact]
+        public void ControllerAcceptedAtRoute_InvokedInUnitTests()
+        {
+            // Arrange
+            var controller = new TestabilityController();
+            var routeName = "RouteName_1";
+            var routeValues = new Dictionary<string, object>() { { "route", "sample" } };
+            var value = new { Value = "Value_1" };
+
+            // Act
+            var result = controller.AcceptedAtRoute_Action(routeName, routeValues, value);
+
+            // Assert
+            Assert.NotNull(result);
+
+            var acceptedAtRouteResult = Assert.IsType<AcceptedAtRouteResult>(result);
+            Assert.Equal(routeName, acceptedAtRouteResult.RouteName);
+            Assert.Single(acceptedAtRouteResult.RouteValues);
+            Assert.Equal("sample", acceptedAtRouteResult.RouteValues["route"]);
+            Assert.Same(value,acceptedAtRouteResult.Value);
+
+            // Arrange
+            controller = new TestabilityController();
+
+            // Act
+            result = controller.AcceptedAtRoute_Action(null, null, null);
+
+            // Assert
+            Assert.NotNull(result);
+
+            acceptedAtRouteResult = Assert.IsType<AcceptedAtRouteResult>(result);
+            Assert.Null(acceptedAtRouteResult.RouteName);
+            Assert.Null(acceptedAtRouteResult.RouteValues);
+            Assert.Null(acceptedAtRouteResult.Value);
+        }
+
+        [Fact]
         public void ControllerCreatedAtAction_InvokedInUnitTests()
         {
             // Arrange
@@ -382,6 +428,45 @@ namespace Microsoft.AspNetCore.Mvc
             Assert.Null(createdAtActionResult.ControllerName);
             Assert.Null(createdAtActionResult.Value);
             Assert.Null(createdAtActionResult.RouteValues);
+        }
+
+        [Fact]
+        public void ControllerAcceptedAtAction_InvokedInUnitTests()
+        {
+            // Arrange
+            var controller = new TestabilityController();
+            var actionName = "ActionName_1";
+            var controllerName = "ControllerName_1";
+            var routeValues = new Dictionary<string, object>() { { "route", "sample" } };
+            var value = new { Value = "Value_1" };
+
+            // Act
+            var result = controller.AcceptedAtAction_Action(actionName, controllerName, routeValues, value);
+
+            // Assert
+            Assert.NotNull(result);
+
+            var acceptedAtActionResult = Assert.IsType<AcceptedAtActionResult>(result);
+            Assert.Equal(actionName, acceptedAtActionResult.ActionName);
+            Assert.Equal(controllerName, acceptedAtActionResult.ControllerName);
+            Assert.Single(acceptedAtActionResult.RouteValues);
+            Assert.Equal("sample", acceptedAtActionResult.RouteValues["route"]);
+            Assert.Same(value, acceptedAtActionResult.Value);
+
+            // Arrange
+            controller = new TestabilityController();
+
+            // Act
+            result = controller.AcceptedAtAction_Action(null, null, null, null);
+
+            // Assert
+            Assert.NotNull(result);
+
+            acceptedAtActionResult = Assert.IsType<AcceptedAtActionResult>(result);
+            Assert.Null(acceptedAtActionResult.ActionName);
+            Assert.Null(acceptedAtActionResult.ControllerName);
+            Assert.Null(acceptedAtActionResult.Value);
+            Assert.Null(acceptedAtActionResult.RouteValues);
         }
 
         [Fact]
@@ -638,6 +723,11 @@ namespace Microsoft.AspNetCore.Mvc
                 return Created(uri, data);
             }
 
+            public IActionResult Accepted_Action(string uri, object data)
+            {
+                return Accepted(uri, data);
+            }
+
             public IActionResult FileContent_Action(string content, string contentType, string fileName)
             {
                 var contentArray = Encoding.UTF8.GetBytes(content);
@@ -683,6 +773,16 @@ namespace Microsoft.AspNetCore.Mvc
             public IActionResult CreatedAtRoute_Action(string routeName, object routeValues, object value)
             {
                 return CreatedAtRoute(routeName, routeValues, value);
+            }
+
+            public IActionResult AcceptedAtAction_Action(string actionName, string controllerName, object routeValues, object value)
+            {
+                return AcceptedAtAction(actionName, controllerName, routeValues, value);
+            }
+
+            public IActionResult AcceptedAtRoute_Action(string routeName, object routeValues, object value)
+            {
+                return AcceptedAtRoute(routeName, routeValues, value);
             }
 
             public IActionResult HttpBadRequest_Action()

@@ -11,7 +11,7 @@ namespace Microsoft.AspNetCore.Mvc.FunctionalTests
     {
         public DirectivesTest(MvcTestFixture<RazorWebSite.Startup> fixture)
         {
-            Client = fixture.Client;
+            Client = fixture.CreateDefaultClient();
         }
 
         public HttpClient Client { get; }
@@ -20,7 +20,7 @@ namespace Microsoft.AspNetCore.Mvc.FunctionalTests
         public async Task ViewsInheritsUsingsAndInjectDirectivesFromViewStarts()
         {
             // Arrange
-            var expected = @"Hello Person1";
+            var expected = "Hello Person1";
 
             // Act
             var body = await Client.GetStringAsync(
@@ -34,7 +34,7 @@ namespace Microsoft.AspNetCore.Mvc.FunctionalTests
         public async Task ViewInheritsBasePageFromViewStarts()
         {
             // Arrange
-            var expected = @"WriteLiteral says:layout:Write says:Write says:Hello Person2";
+            var expected = "WriteLiteral says:layout:Write says:Write says:Hello Person2";
 
             // Act
             var body = await Client.GetStringAsync("http://localhost/Directives/ViewInheritsBasePageFromViewImports");
@@ -55,7 +55,7 @@ Write says:WriteLiteral says:<strong>Write says:98052WriteLiteral says:</strong>
             var body = await Client.GetStringAsync("Directives/ViewReplacesTModelTokenFromInheritedBasePages");
 
             // Assert
-            Assert.Equal(expected, body.Trim());
+            Assert.Equal(expected, body.Trim(), ignoreLineEndingDifferences: true);
         }
     }
 }

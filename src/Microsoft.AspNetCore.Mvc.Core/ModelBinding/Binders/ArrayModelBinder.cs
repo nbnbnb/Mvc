@@ -5,6 +5,8 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Microsoft.AspNetCore.Mvc.ModelBinding.Binders
 {
@@ -15,13 +17,53 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Binders
     public class ArrayModelBinder<TElement> : CollectionModelBinder<TElement>
     {
         /// <summary>
+        /// <para>This constructor is obsolete and will be removed in a future version. The recommended alternative
+        /// is the overload that also takes an <see cref="ILoggerFactory"/>.</para>
+        /// <para>Creates a new <see cref="ArrayModelBinder{TElement}"/>.</para>
+        /// </summary>
+        /// <param name="elementBinder">
+        /// The <see cref="IModelBinder"/> for binding <typeparamref name="TElement"/>.
+        /// </param>
+        [Obsolete("This constructor is obsolete and will be removed in a future version. The recommended alternative"
+            + " is the overload that also takes an " + nameof(ILoggerFactory) + ".")]
+        public ArrayModelBinder(IModelBinder elementBinder)
+            : this(elementBinder, NullLoggerFactory.Instance)
+        {
+        }
+
+        /// <summary>
         /// Creates a new <see cref="ArrayModelBinder{TElement}"/>.
         /// </summary>
         /// <param name="elementBinder">
         /// The <see cref="IModelBinder"/> for binding <typeparamref name="TElement"/>.
         /// </param>
-        public ArrayModelBinder(IModelBinder elementBinder)
-            : base(elementBinder)
+        /// <param name="loggerFactory">The <see cref="ILoggerFactory"/>.</param>
+        /// <remarks>
+        /// The binder will not add an error for an unbound top-level model even if
+        /// <see cref="ModelMetadata.IsBindingRequired"/> is <see langword="true"/>.
+        /// </remarks>
+        public ArrayModelBinder(IModelBinder elementBinder, ILoggerFactory loggerFactory)
+            : base(elementBinder, loggerFactory)
+        {
+        }
+
+        /// <summary>
+        /// Creates a new <see cref="ArrayModelBinder{TElement}"/>.
+        /// </summary>
+        /// <param name="elementBinder">
+        /// The <see cref="IModelBinder"/> for binding <typeparamref name="TElement"/>.
+        /// </param>
+        /// <param name="loggerFactory">The <see cref="ILoggerFactory"/>.</param>
+        /// <param name="allowValidatingTopLevelNodes">
+        /// Indication that validation of top-level models is enabled. If <see langword="true"/> and
+        /// <see cref="ModelMetadata.IsBindingRequired"/> is <see langword="true"/> for a top-level model, the binder
+        /// adds a <see cref="ModelStateDictionary"/> error when the model is not bound.
+        /// </param>
+        public ArrayModelBinder(
+            IModelBinder elementBinder,
+            ILoggerFactory loggerFactory,
+            bool allowValidatingTopLevelNodes)
+            : base(elementBinder, loggerFactory, allowValidatingTopLevelNodes)
         {
         }
 
@@ -36,7 +78,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Binders
         {
             Debug.Assert(targetType == typeof(TElement[]), "GenericModelBinder only creates this binder for arrays.");
 
-            return new TElement[0];
+            return Array.Empty<TElement>();
         }
 
         /// <inheritdoc />

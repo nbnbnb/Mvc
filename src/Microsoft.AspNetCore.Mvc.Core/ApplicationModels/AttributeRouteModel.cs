@@ -7,6 +7,7 @@ using System.Linq;
 using System.Text;
 using Microsoft.AspNetCore.Mvc.Core;
 using Microsoft.AspNetCore.Mvc.Routing;
+using Microsoft.AspNetCore.Routing;
 
 namespace Microsoft.AspNetCore.Mvc.ApplicationModels
 {
@@ -42,9 +43,11 @@ namespace Microsoft.AspNetCore.Mvc.ApplicationModels
             Name = other.Name;
             Order = other.Order;
             Template = other.Template;
+            SuppressLinkGeneration = other.SuppressLinkGeneration;
+            SuppressPathMatching = other.SuppressPathMatching;
         }
 
-        public IRouteTemplateProvider Attribute { get; private set; }
+        public IRouteTemplateProvider Attribute { get;}
 
         public string Template { get; set; }
 
@@ -52,14 +55,17 @@ namespace Microsoft.AspNetCore.Mvc.ApplicationModels
 
         public string Name { get; set; }
 
-        public bool IsAbsoluteTemplate
-        {
-            get
-            {
-                return Template != null &&
-                    IsOverridePattern(Template);
-            }
-        }
+        /// <summary>
+        /// Gets or sets a value that determines if this model participates in link generation.
+        /// </summary>
+        public bool SuppressLinkGeneration { get; set; }
+
+        /// <summary>
+        /// Gets or sets a value that determines if this model participates in path matching (inbound routing).
+        /// </summary>
+        public bool SuppressPathMatching { get; set; }
+
+        public bool IsAbsoluteTemplate => Template != null && IsOverridePattern(Template);
 
         /// <summary>
         /// Combines two <see cref="AttributeRouteModel"/> instances and returns
@@ -96,7 +102,36 @@ namespace Microsoft.AspNetCore.Mvc.ApplicationModels
                 Template = combinedTemplate,
                 Order = right.Order ?? left.Order,
                 Name = ChooseName(left, right),
+                SuppressLinkGeneration = left.SuppressLinkGeneration || right.SuppressLinkGeneration,
+                SuppressPathMatching = left.SuppressPathMatching || right.SuppressPathMatching,
             };
+        }
+
+        /// <summary>
+        /// Combines the prefix and route template for an attribute route.
+        /// </summary>
+        /// <param name="prefix">The prefix.</param>
+        /// <param name="template">The route template.</param>
+        /// <returns>The combined pattern.</returns>
+        public static string CombineTemplates(string prefix, string template)
+        {
+            var result = CombineCore(prefix, template);
+            return CleanTemplate(result);
+        }
+
+        /// <summary>
+        /// Determines if a template pattern can be used to override a prefix.
+        /// </summary>
+        /// <param name="template">The template.</param>
+        /// <returns><c>true</c> if this is an overriding template, <c>false</c> otherwise.</returns>
+        /// <remarks>
+        /// Route templates starting with "~/" or "/" can be used to override the prefix.
+        /// </remarks>
+        public static bool IsOverridePattern(string template)
+        {
+            return template != null &&
+                (template.StartsWith("~/", StringComparison.Ordinal) ||
+                template.StartsWith("/", StringComparison.Ordinal));
         }
 
         private static string ChooseName(
@@ -111,12 +146,6 @@ namespace Microsoft.AspNetCore.Mvc.ApplicationModels
             {
                 return right.Name;
             }
-        }
-
-        internal static string CombineTemplates(string left, string right)
-        {
-            var result = CombineCore(left, right);
-            return CleanTemplate(result);
         }
 
         private static string CombineCore(string left, string right)
@@ -141,13 +170,6 @@ namespace Microsoft.AspNetCore.Mvc.ApplicationModels
 
             // Both templates contain some text.
             return left + "/" + right;
-        }
-
-        private static bool IsOverridePattern(string template)
-        {
-            return template != null &&
-                (template.StartsWith("~/", StringComparison.Ordinal) ||
-                template.StartsWith("/", StringComparison.Ordinal));
         }
 
         private static bool IsEmptyLeftSegment(string template)
@@ -199,6 +221,11 @@ namespace Microsoft.AspNetCore.Mvc.ApplicationModels
         }
 
         public static string ReplaceTokens(string template, IDictionary<string, string> values)
+        {
+            return ReplaceTokens(template, values, routeTokenTransformer: null);
+        }
+
+        public static string ReplaceTokens(string template, IDictionary<string, string> values, IOutboundParameterTransformer routeTokenTransformer)
         {
             var builder = new StringBuilder();
             var state = TemplateParserState.Plaintext;
@@ -340,8 +367,7 @@ namespace Microsoft.AspNetCore.Mvc.ApplicationModels
                                 .Replace("[[", "[")
                                 .Replace("]]", "]");
 
-                            string value;
-                            if (!values.TryGetValue(token, out value))
+                            if (!values.TryGetValue(token, out var value))
                             {
                                 // Value not found
                                 var message = Resources.FormatAttributeRoute_TokenReplacement_ReplacementValueNotFound(
@@ -349,6 +375,11 @@ namespace Microsoft.AspNetCore.Mvc.ApplicationModels
                                     token,
                                     string.Join(", ", values.Keys.OrderBy(k => k, StringComparer.OrdinalIgnoreCase)));
                                 throw new InvalidOperationException(message);
+                            }
+
+                            if (routeTokenTransformer != null)
+                            {
+                                value = routeTokenTransformer.TransformOutbound(value);
                             }
 
                             builder.Append(value);

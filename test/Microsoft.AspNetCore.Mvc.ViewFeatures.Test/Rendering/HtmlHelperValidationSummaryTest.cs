@@ -7,7 +7,6 @@ using System.Collections.ObjectModel;
 using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Html;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
-using Microsoft.AspNetCore.Mvc.TestCommon;
 using Xunit;
 
 namespace Microsoft.AspNetCore.Mvc.Rendering
@@ -75,9 +74,6 @@ namespace Microsoft.AspNetCore.Mvc.Rendering
         {
             get
             {
-                var basicDiv = "<div class=\"HtmlEncode[[validation-summary-errors]]\"><ul>" +
-                    "<li style=\"display:none\"></li>" + Environment.NewLine +
-                    "</ul></div>";
                 var divWithError = "<div class=\"HtmlEncode[[validation-summary-errors]]\"><ul>" +
                     "<li>HtmlEncode[[This is my validation message]]</li>" + Environment.NewLine +
                     "</ul></div>";
@@ -89,8 +85,8 @@ namespace Microsoft.AspNetCore.Mvc.Rendering
                 {
                     { false, false, divWithError, divWithError },
                     { false, true, divWithErrorAndSummary, divWithErrorAndSummary },
-                    { true, false, divWithError, basicDiv },
-                    { true, true, divWithError, basicDiv },
+                    { true, false, divWithError, string.Empty },
+                    { true, true, divWithError, string.Empty },
                 };
             }
         }
@@ -100,9 +96,6 @@ namespace Microsoft.AspNetCore.Mvc.Rendering
         {
             get
             {
-                var basicDiv = "<div class=\"HtmlEncode[[validation-summary-errors]]\"><ul>" +
-                    "<li style=\"display:none\"></li>" + Environment.NewLine +
-                    "</ul></div>";
                 var divWithRootError = "<div class=\"HtmlEncode[[validation-summary-errors]]\"><ul>" +
                     "<li>HtmlEncode[[This is an error for the model root.]]</li>" + Environment.NewLine +
                     "<li>HtmlEncode[[This is another error for the model root.]]</li>" + Environment.NewLine +
@@ -129,7 +122,7 @@ namespace Microsoft.AspNetCore.Mvc.Rendering
                     { false, "some.unrelated.prefix", divWithAllErrors },
                     { true, string.Empty, divWithRootError },
                     { true, "Property3", divWithProperty3Error },
-                    { true, "some.unrelated.prefix", basicDiv },
+                    { true, "some.unrelated.prefix", string.Empty },
                 };
             }
         }
@@ -526,11 +519,7 @@ namespace Microsoft.AspNetCore.Mvc.Rendering
             var validationSummaryResult = helper.ValidationSummary(excludePropertyErrors: true);
 
             // Assert
-            Assert.Equal(
-                "<div class=\"HtmlEncode[[validation-summary-errors]]\"><ul><li style=\"display:none\"></li>" +
-                Environment.NewLine +
-                "</ul></div>",
-                HtmlContentUtilities.HtmlContentToString(validationSummaryResult));
+            Assert.Equal(HtmlString.Empty, validationSummaryResult);
         }
 
         [Fact]
@@ -576,6 +565,7 @@ namespace Microsoft.AspNetCore.Mvc.Rendering
         {
             // Arrange
             var helper = DefaultTemplatesUtilities.GetHtmlHelper();
+            helper.ViewData.ModelState.AddModelError(string.Empty, "Error for root");
             helper.ViewData.ModelState.AddModelError("Property1", "Error for Property1");
 
             // Act
@@ -585,7 +575,7 @@ namespace Microsoft.AspNetCore.Mvc.Rendering
             Assert.Equal(
                 "<div class=\"HtmlEncode[[validation-summary-errors]]\"><span>HtmlEncode[[Custom Message]]</span>" +
                 Environment.NewLine +
-                "<ul><li style=\"display:none\"></li>" + Environment.NewLine +
+                "<ul><li>HtmlEncode[[Error for root]]</li>" + Environment.NewLine +
                 "</ul></div>",
                 HtmlContentUtilities.HtmlContentToString(validationSummaryResult));
         }
@@ -633,6 +623,7 @@ namespace Microsoft.AspNetCore.Mvc.Rendering
         {
             // Arrange
             var helper = DefaultTemplatesUtilities.GetHtmlHelper();
+            helper.ViewData.ModelState.AddModelError(string.Empty, "Error for root");
             helper.ViewData.ModelState.AddModelError("Property1", "Error for Property1");
 
             // Act
@@ -642,7 +633,7 @@ namespace Microsoft.AspNetCore.Mvc.Rendering
             Assert.Equal(
                 "<div class=\"HtmlEncode[[validation-summary-errors]]\"><div>HtmlEncode[[Custom Message]]</div>" +
                 Environment.NewLine +
-                "<ul><li style=\"display:none\"></li>" + Environment.NewLine +
+                "<ul><li>HtmlEncode[[Error for root]]</li>" + Environment.NewLine +
                 "</ul></div>",
                 HtmlContentUtilities.HtmlContentToString(validationSummaryResult));
         }
@@ -652,16 +643,20 @@ namespace Microsoft.AspNetCore.Mvc.Rendering
         {
             // Arrange
             var helper = DefaultTemplatesUtilities.GetHtmlHelper();
+            helper.ViewData.ModelState.AddModelError(string.Empty, "Error for root");
             helper.ViewData.ModelState.AddModelError("Property1", "Error for Property1");
 
             // Act
-            var validationSummaryResult = helper.ValidationSummary(excludePropertyErrors: true, message: "Custom Message", htmlAttributes: new { attr = "value" });
+            var validationSummaryResult = helper.ValidationSummary(
+                excludePropertyErrors: true,
+                message: "Custom Message",
+                htmlAttributes: new { attr = "value" });
 
             // Assert
             Assert.Equal(
                 "<div attr=\"HtmlEncode[[value]]\" class=\"HtmlEncode[[validation-summary-errors]]\"><span>HtmlEncode[[Custom Message]]</span>" +
                 Environment.NewLine +
-                "<ul><li style=\"display:none\"></li>" + Environment.NewLine +
+                "<ul><li>HtmlEncode[[Error for root]]</li>" + Environment.NewLine +
                 "</ul></div>",
                 HtmlContentUtilities.HtmlContentToString(validationSummaryResult));
         }
@@ -672,6 +667,8 @@ namespace Microsoft.AspNetCore.Mvc.Rendering
             modelState.AddModelError("Property3.Property2", "This is an error for Property3.Property2.");
             modelState.AddModelError("Property3.OrderedProperty3", "This is an error for Property3.OrderedProperty3.");
             modelState.AddModelError("Property3.OrderedProperty2", "This is an error for Property3.OrderedProperty2.");
+            modelState.SetModelValue("Property3.Empty", rawValue: null, attemptedValue: null);
+            modelState.MarkFieldValid("Property3.Empty");
 
             var provider = new EmptyModelMetadataProvider();
             var metadata = provider.GetMetadataForProperty(typeof(ValidationModel), nameof(ValidationModel.Property3));
@@ -712,6 +709,9 @@ namespace Microsoft.AspNetCore.Mvc.Rendering
 
             modelState.AddModelError("OrderedProperty1", "This is an error for OrderedProperty1.");
             modelState.AddModelError("OrderedProperty2", "This is yet-another error for OrderedProperty2.");
+
+            modelState.SetModelValue("Empty", rawValue: null, attemptedValue: null);
+            modelState.MarkFieldValid("Empty");
         }
 
         private class ValidationModel
@@ -738,6 +738,10 @@ namespace Microsoft.AspNetCore.Mvc.Rendering
             public string OrderedProperty2 { get; set; }
             [Display(Order = 23)]
             public string OrderedProperty1 { get; set; }
+
+            // Exists to ensure #4989 does not regress. Issue specific to case where collection has a ModelStateEntry
+            // but no element does.
+            public byte[] Empty { get; set; }
         }
 
         private class ModelWithCollection

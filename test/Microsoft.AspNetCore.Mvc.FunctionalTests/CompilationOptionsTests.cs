@@ -13,7 +13,7 @@ namespace Microsoft.AspNetCore.Mvc.FunctionalTests
     {
         public CompilationOptionsTests(MvcTestFixture<RazorWebSite.Startup> fixture)
         {
-            Client = fixture.Client;
+            Client = fixture.CreateDefaultClient();
         }
 
         public HttpClient Client { get; }
@@ -22,15 +22,9 @@ namespace Microsoft.AspNetCore.Mvc.FunctionalTests
         public async Task CompilationOptions_AreUsedByViewsAndPartials()
         {
             // Arrange
-#if NET451
             var expected =
-@"This method is running from NET451
-This method is only defined in NET451";
-#elif NETCOREAPP1_0
-            var expected =
-@"This method is running from NETCOREAPP1_0
-This method is only defined in NETCOREAPP1_0";
-#endif
+@"This method is running from NETCOREAPP2_0
+This method is only defined in NETCOREAPP2_0";
 
             // Act
             var body = await Client.GetStringAsync("http://localhost/ViewsConsumingCompilationOptions/");

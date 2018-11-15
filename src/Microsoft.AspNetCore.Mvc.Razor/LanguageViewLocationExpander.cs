@@ -4,7 +4,6 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.Threading;
 
 namespace Microsoft.AspNetCore.Mvc.Razor
 {
@@ -23,7 +22,7 @@ namespace Microsoft.AspNetCore.Mvc.Razor
     public class LanguageViewLocationExpander : IViewLocationExpander
     {
         private const string ValueKey = "language";
-        private LanguageViewLocationExpanderFormat _format;
+        private readonly LanguageViewLocationExpanderFormat _format;
 
         /// <summary>
         /// Instantiates a new <see cref="LanguageViewLocationExpander"/> instance.
@@ -34,7 +33,7 @@ namespace Microsoft.AspNetCore.Mvc.Razor
         }
 
         /// <summary>
-        /// Instantiates a new <see cref="Internal.DefaultTagHelperActivator"/> instance.
+        /// Instantiates a new <see cref="LanguageViewLocationExpander"/> instance.
         /// </summary>
         /// <param name="format">The <see cref="LanguageViewLocationExpanderFormat"/>.</param>
         public LanguageViewLocationExpander(LanguageViewLocationExpanderFormat format)
@@ -51,11 +50,7 @@ namespace Microsoft.AspNetCore.Mvc.Razor
             }
 
             // Using CurrentUICulture so it loads the locale specific resources for the views.
-#if NET451
-            context.Values[ValueKey] = Thread.CurrentThread.CurrentUICulture.Name;
-#else
             context.Values[ValueKey] = CultureInfo.CurrentUICulture.Name;
-#endif
         }
 
         /// <inheritdoc />
@@ -73,8 +68,7 @@ namespace Microsoft.AspNetCore.Mvc.Razor
                 throw new ArgumentNullException(nameof(viewLocations));
             }
 
-            string value;
-            context.Values.TryGetValue(ValueKey, out value);
+            context.Values.TryGetValue(ValueKey, out var value);
 
             if (!string.IsNullOrEmpty(value))
             {

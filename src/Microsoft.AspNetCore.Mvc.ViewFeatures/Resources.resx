@@ -131,7 +131,7 @@
     <value>Method '{0}' of view component '{1}' should be declared to return a value.</value>
   </data>
   <data name="ViewComponent_CannotFindComponent" xml:space="preserve">
-    <value>A view component named '{0}' could not be found.</value>
+    <value>A view component named '{0}' could not be found. A view component must be a public non-abstract class, not contain any generic parameters, and either be decorated with '{1}' or have a class name ending with the '{2}' suffix. A view component must not be decorated with '{3}'.</value>
   </data>
   <data name="ViewComponent_IViewComponentFactory_ReturnedNull" xml:space="preserve">
     <value>An invoker could not be created for the view component '{0}'.</value>
@@ -263,10 +263,10 @@
     <value>Cannot deserialize {0} of type '{1}'.</value>
   </data>
   <data name="TempData_CannotSerializeDictionary" xml:space="preserve">
-    <value>The '{0}' cannot serialize a dictionary with a key of type '{1}' to session state.</value>
+    <value>The '{0}' cannot serialize a dictionary with a key of type '{1}'. The key must be of type '{2}'.</value>
   </data>
-  <data name="TempData_CannotSerializeToSession" xml:space="preserve">
-    <value>The '{0}' cannot serialize an object of type '{1}' to session state.</value>
+  <data name="TempData_CannotSerializeType" xml:space="preserve">
+    <value>The '{0}' cannot serialize an object of type '{1}'.</value>
   </data>
   <data name="Dictionary_DuplicateKey" xml:space="preserve">
     <value>The collection already contains an entry with key '{0}'.</value>
@@ -282,5 +282,14 @@
   </data>
   <data name="CreateModelExpression_NullModelMetadata" xml:space="preserve">
     <value>The {0} was unable to provide metadata for expression '{1}'.</value>
+  </data>
+  <data name="ViewEnginesAreRequired" xml:space="preserve">
+    <value>'{0}.{1}' must not be empty. At least one '{2}' is required to locate a view for rendering.</value>
+  </data>
+  <data name="TempDataProperties_InvalidType" xml:space="preserve">
+    <value>The '{0}.{1}' property with {2} is invalid.</value>
+  </data>
+  <data name="TempDataProperties_PublicGetterSetter" xml:space="preserve">
+    <value>The '{0}.{1}' property with {2} is invalid. A property using {2} must have a public getter and setter.</value>
   </data>
 </root>

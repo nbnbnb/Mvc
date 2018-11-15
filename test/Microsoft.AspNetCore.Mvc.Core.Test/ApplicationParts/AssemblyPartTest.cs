@@ -1,9 +1,11 @@
 ﻿// Copyright (c) .NET Foundation. All rights reserved.
 // Licensed under the Apache License, Version 2.0. See License.txt in the project root for license information.
 
+using System;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Reflection.Emit;
 using Xunit;
 
 namespace Microsoft.AspNetCore.Mvc.ApplicationParts
@@ -67,7 +69,7 @@ namespace Microsoft.AspNetCore.Mvc.ApplicationParts
         }
 
         [Fact]
-        public void GetReferencePaths_ReturnsAssebmlyLocation_IfPreserveCompilationContextIsNotSet()
+        public void GetReferencePaths_ReturnsAssemblyLocation_IfPreserveCompilationContextIsNotSet()
         {
             // Arrange
             // src projects do not have preserveCompilationContext specified.
@@ -80,6 +82,23 @@ namespace Microsoft.AspNetCore.Mvc.ApplicationParts
             // Assert
             var actual = Assert.Single(references);
             Assert.Equal(assembly.Location, actual);
+        }
+
+        [Fact]
+        public void GetReferencePaths_ReturnsEmptySequenceForDynamicAssembly()
+        {
+            // Arrange
+            var name = new AssemblyName($"DynamicAssembly-{Guid.NewGuid()}");
+            var assembly = AssemblyBuilder.DefineDynamicAssembly(name,
+                AssemblyBuilderAccess.RunAndCollect);
+
+            var part = new AssemblyPart(assembly);
+
+            // Act
+            var references = part.GetReferencePaths().ToList();
+
+            // Assert
+            Assert.Empty(references);
         }
     }
 }

@@ -8,9 +8,11 @@ using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using Microsoft.AspNetCore.Mvc.Core;
-using Microsoft.AspNetCore.Mvc.Internal;
 using Microsoft.AspNetCore.Mvc.ModelBinding.Metadata;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Internal;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace Microsoft.AspNetCore.Mvc.ModelBinding
@@ -22,20 +24,42 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
     {
         private readonly IModelMetadataProvider _metadataProvider;
         private readonly IModelBinderProvider[] _providers;
-
         private readonly ConcurrentDictionary<Key, IModelBinder> _cache;
+        private readonly IServiceProvider _serviceProvider;
+
+        /// <summary>
+        /// <para>This constructor is obsolete and will be removed in a future version. The recommended alternative
+        /// is the overload that also takes an <see cref="IServiceProvider"/>.</para>
+        /// <para>Creates a new <see cref="ModelBinderFactory"/>.</para>
+        /// </summary>
+        /// <param name="metadataProvider">The <see cref="IModelMetadataProvider"/>.</param>
+        /// <param name="options">The <see cref="IOptions{TOptions}"/> for <see cref="MvcOptions"/>.</param>
+        [Obsolete("This constructor is obsolete and will be removed in a future version. The recommended alternative"
+            + " is the overload that also takes an " + nameof(IServiceProvider) + ".")]
+        public ModelBinderFactory(IModelMetadataProvider metadataProvider, IOptions<MvcOptions> options)
+            : this(metadataProvider, options, GetDefaultServices())
+        {
+        }
 
         /// <summary>
         /// Creates a new <see cref="ModelBinderFactory"/>.
         /// </summary>
         /// <param name="metadataProvider">The <see cref="IModelMetadataProvider"/>.</param>
         /// <param name="options">The <see cref="IOptions{TOptions}"/> for <see cref="MvcOptions"/>.</param>
-        public ModelBinderFactory(IModelMetadataProvider metadataProvider, IOptions<MvcOptions> options)
+        /// <param name="serviceProvider">The <see cref="IServiceProvider"/>.</param>
+        public ModelBinderFactory(
+            IModelMetadataProvider metadataProvider,
+            IOptions<MvcOptions> options,
+            IServiceProvider serviceProvider)
         {
             _metadataProvider = metadataProvider;
             _providers = options.Value.ModelBinderProviders.ToArray();
-
+            _serviceProvider = serviceProvider;
             _cache = new ConcurrentDictionary<Key, IModelBinder>();
+
+            var loggerFactory = serviceProvider.GetRequiredService<ILoggerFactory>();
+            var logger = loggerFactory.CreateLogger<ModelBinderFactory>();
+            logger.RegisteredModelBinderProviders(_providers);
         }
 
         /// <inheritdoc />
@@ -46,12 +70,19 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
                 throw new ArgumentNullException(nameof(context));
             }
 
-            IModelBinder binder;
-            if (TryGetCachedBinder(context.Metadata, context.CacheToken, out binder))
+            if (_providers.Length == 0)
+            {
+                throw new InvalidOperationException(Resources.FormatModelBinderProvidersAreRequired(
+                    typeof(MvcOptions).FullName,
+                    nameof(MvcOptions.ModelBinderProviders),
+                    typeof(IModelBinderProvider).FullName));
+            }
+
+            if (TryGetCachedBinder(context.Metadata, context.CacheToken, out var binder))
             {
                 return binder;
             }
-            
+
             // Perf: We're calling the Uncached version of the API here so we can:
             // 1. avoid allocating a context when the value is already cached
             // 2. avoid checking the cache twice when the value is not cached
@@ -73,8 +104,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
         // so that all intermediate results can be cached.
         private IModelBinder CreateBinderCoreCached(DefaultModelBinderProviderContext providerContext, object token)
         {
-            IModelBinder binder;
-            if (TryGetCachedBinder(providerContext.Metadata, token, out binder))
+            if (TryGetCachedBinder(providerContext.Metadata, token, out var binder))
             {
                 return binder;
             }
@@ -98,7 +128,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
                 return NoOpBinder.Instance;
             }
 
-            // A non-null token will usually be passed in at the the top level (ParameterDescriptor likely).
+            // A non-null token will usually be passed in at the top level (ParameterDescriptor likely).
             // This prevents us from treating a parameter the same as a collection-element - which could
             // happen looking at just model metadata.
             var key = new Key(providerContext.Metadata, token);
@@ -112,8 +142,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             // PlaceholderBinder because that would result in lots of unnecessary indirection and allocations.
             var visited = providerContext.Visited;
 
-            IModelBinder binder;
-            if (visited.TryGetValue(key, out binder))
+            if (visited.TryGetValue(key, out var binder))
             {
                 if (binder != null)
                 {
@@ -145,8 +174,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             }
 
             // If the PlaceholderBinder was created, then it means we recursed. Hook it up to the 'real' binder.
-            var placeholderBinder = visited[key] as PlaceholderBinder;
-            if (placeholderBinder != null)
+            if (visited[key] is PlaceholderBinder placeholderBinder)
             {
                 // It's also possible that user code called into `CreateBinder` but then returned null, we don't
                 // want to create something that will null-ref later so just hook this up to the no-op binder.
@@ -187,6 +215,13 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             return _cache.TryGetValue(new Key(metadata, cacheToken), out binder);
         }
 
+        private static IServiceProvider GetDefaultServices()
+        {
+            var services = new ServiceCollection();
+            services.AddSingleton<ILoggerFactory>(NullLoggerFactory.Instance);
+            return services.BuildServiceProvider();
+        }
+
         private class DefaultModelBinderProviderContext : ModelBinderProviderContext
         {
             private readonly ModelBinderFactory _factory;
@@ -197,14 +232,18 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             {
                 _factory = factory;
                 Metadata = factoryContext.Metadata;
-                BindingInfo = new BindingInfo
+                BindingInfo bindingInfo;
+                if (factoryContext.BindingInfo != null)
                 {
-                    BinderModelName = factoryContext.BindingInfo?.BinderModelName ?? Metadata.BinderModelName,
-                    BinderType = factoryContext.BindingInfo?.BinderType ?? Metadata.BinderType,
-                    BindingSource = factoryContext.BindingInfo?.BindingSource ?? Metadata.BindingSource,
-                    PropertyFilterProvider =
-                        factoryContext.BindingInfo?.PropertyFilterProvider ?? Metadata.PropertyFilterProvider,
-                };
+                    bindingInfo = new BindingInfo(factoryContext.BindingInfo);
+                }
+                else
+                {
+                    bindingInfo = new BindingInfo();
+                }
+
+                bindingInfo.TryApplyBindingInfo(Metadata);
+                BindingInfo = bindingInfo;
 
                 MetadataProvider = _factory._metadataProvider;
                 Visited = new Dictionary<Key, IModelBinder>();
@@ -212,21 +251,15 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
 
             private DefaultModelBinderProviderContext(
                 DefaultModelBinderProviderContext parent,
-                ModelMetadata metadata)
+                ModelMetadata metadata,
+                BindingInfo bindingInfo)
             {
                 Metadata = metadata;
 
                 _factory = parent._factory;
                 MetadataProvider = parent.MetadataProvider;
                 Visited = parent.Visited;
-
-                BindingInfo = new BindingInfo()
-                {
-                    BinderModelName = metadata.BinderModelName,
-                    BinderType = metadata.BinderType,
-                    BindingSource = metadata.BindingSource,
-                    PropertyFilterProvider = metadata.PropertyFilterProvider,
-                };
+                BindingInfo = bindingInfo;
             }
 
             public override BindingInfo BindingInfo { get; }
@@ -237,19 +270,34 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
 
             public Dictionary<Key, IModelBinder> Visited { get; }
 
+            public override IServiceProvider Services => _factory._serviceProvider;
+
             public override IModelBinder CreateBinder(ModelMetadata metadata)
+            {
+                var bindingInfo = new BindingInfo();
+                bindingInfo.TryApplyBindingInfo(metadata);
+
+                return CreateBinder(metadata, bindingInfo);
+            }
+
+            public override IModelBinder CreateBinder(ModelMetadata metadata, BindingInfo bindingInfo)
             {
                 if (metadata == null)
                 {
                     throw new ArgumentNullException(nameof(metadata));
                 }
 
+                if (bindingInfo == null)
+                {
+                    throw new ArgumentNullException(nameof(bindingInfo));
+                }
+
                 // For non-root nodes we use the ModelMetadata as the cache token. This ensures that all non-root
-                // nodes with the same metadata will have the the same binder. This is OK because for an non-root
+                // nodes with the same metadata will have the same binder. This is OK because for an non-root
                 // node there's no opportunity to customize binding info like there is for a parameter.
                 var token = metadata;
 
-                var nestedContext = new DefaultModelBinderProviderContext(this, metadata);
+                var nestedContext = new DefaultModelBinderProviderContext(this, metadata, bindingInfo);
                 return _factory.CreateBinderCoreCached(nestedContext, token);
             }
         }
@@ -261,7 +309,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
         // the ParameterDescriptor) or in a call to TryUpdateModel (no BindingInfo) or as a collection element.
         //
         // We need to be able to tell the difference between these things to avoid over-caching.
-        private struct Key : IEquatable<Key>
+        private readonly struct Key : IEquatable<Key>
         {
             private readonly ModelMetadata _metadata;
             private readonly object _token; // Explicitly using ReferenceEquality for tokens.
@@ -293,13 +341,17 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
 
             public override string ToString()
             {
-                if (_metadata.MetadataKind == ModelMetadataKind.Type)
+                switch (_metadata.MetadataKind)
                 {
-                    return $"{_token} (Type: '{_metadata.ModelType.Name}')";
-                }
-                else
-                {
-                    return $"{_token} (Property: '{_metadata.ContainerType.Name}.{_metadata.PropertyName}' Type: '{_metadata.ModelType.Name}')";
+                    case ModelMetadataKind.Parameter:
+                        return $"{_token} (Parameter: '{_metadata.ParameterName}' Type: '{_metadata.ModelType.Name}')";
+                    case ModelMetadataKind.Property:
+                        return $"{_token} (Property: '{_metadata.ContainerType.Name}.{_metadata.PropertyName}' " +
+                            $"Type: '{_metadata.ModelType.Name}')";
+                    case ModelMetadataKind.Type:
+                        return $"{_token} (Type: '{_metadata.ModelType.Name}')";
+                    default:
+                        return $"Unsupported MetadataKind '{_metadata.MetadataKind}'.";
                 }
             }
         }

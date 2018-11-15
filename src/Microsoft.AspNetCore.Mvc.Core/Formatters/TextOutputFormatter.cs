@@ -7,7 +7,6 @@ using System.Text;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Core;
-using Microsoft.AspNetCore.Mvc.Internal;
 using Microsoft.Extensions.Primitives;
 using Microsoft.Net.Http.Headers;
 
@@ -77,8 +76,8 @@ namespace Microsoft.AspNetCore.Mvc.Formatters
                 throw new InvalidOperationException(message);
             }
 
-            var request = context.HttpContext.Request;
-            var encoding = MatchAcceptCharacterEncoding(request.GetTypedHeaders().AcceptCharset);
+            var acceptCharsetHeaderValues = GetAcceptCharsetHeaderValues(context);
+            var encoding = MatchAcceptCharacterEncoding(acceptCharsetHeaderValues);
             if (encoding != null)
             {
                 return encoding;
@@ -138,7 +137,7 @@ namespace Microsoft.AspNetCore.Mvc.Formatters
             {
                 var response = context.HttpContext.Response;
                 response.StatusCode = StatusCodes.Status406NotAcceptable;
-                return TaskCache.CompletedTask;
+                return Task.CompletedTask;
             }
 
             context.ContentType = selectedMediaType;
@@ -166,6 +165,17 @@ namespace Microsoft.AspNetCore.Mvc.Formatters
         /// <returns>A task which can write the response body.</returns>
         public abstract Task WriteResponseBodyAsync(OutputFormatterWriteContext context, Encoding selectedEncoding);
 
+        internal static IList<StringWithQualityHeaderValue> GetAcceptCharsetHeaderValues(OutputFormatterWriteContext context)
+        {
+            var request = context.HttpContext.Request;
+            if (StringWithQualityHeaderValue.TryParseList(request.Headers[HeaderNames.AcceptCharset], out IList<StringWithQualityHeaderValue> result))
+            {
+                return result;
+            }
+
+            return Array.Empty<StringWithQualityHeaderValue>();
+        }
+
         private string GetMediaTypeWithCharset(string mediaType, Encoding encoding)
         {
             if (string.Equals(encoding.WebName, Encoding.UTF8.WebName, StringComparison.OrdinalIgnoreCase) &&
@@ -185,7 +195,7 @@ namespace Microsoft.AspNetCore.Mvc.Formatters
                 for (var i = 0; i < acceptValues.Count; i++)
                 {
                     var charset = acceptValues[i].Value;
-                    if (!string.IsNullOrEmpty(charset))
+                    if (!StringSegment.IsNullOrEmpty(charset))
                     {
                         for (var j = 0; j < SupportedEncodings.Count; j++)
                         {
@@ -208,7 +218,6 @@ namespace Microsoft.AspNetCore.Mvc.Formatters
         private IList<StringWithQualityHeaderValue> Sort(IList<StringWithQualityHeaderValue> values)
         {
             var sortNeeded = false;
-            var count = 0;
 
             for (var i = 0; i < values.Count; i++)
             {
@@ -219,12 +228,7 @@ namespace Microsoft.AspNetCore.Mvc.Formatters
                 }
                 else if (value.Quality != null)
                 {
-                    count++;
                     sortNeeded = true;
-                }
-                else
-                {
-                    count++;
                 }
             }
 

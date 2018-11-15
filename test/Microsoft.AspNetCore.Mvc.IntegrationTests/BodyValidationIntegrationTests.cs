@@ -10,6 +10,8 @@ using System.Text;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc.Abstractions;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
+using Microsoft.Extensions.Options;
+using Newtonsoft.Json;
 using Xunit;
 
 namespace Microsoft.AspNetCore.Mvc.IntegrationTests
@@ -23,7 +25,7 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
             var input = "{ \"Name\": \"MVC\", \"Contact\":\"4258959019\", \"Category\":\"Technology\"," +
                 "\"CompanyName\":\"Microsoft\", \"Country\":\"USA\",\"Price\": 21, " +
                 "\"ProductDetails\": {\"Detail1\": \"d1\", \"Detail2\": \"d2\", \"Detail3\": \"d3\"}}";
-            var argumentBinder = ModelBindingTestHelper.GetArgumentBinder();
+            var parameterBinder = ModelBindingTestHelper.GetParameterBinder();
             var parameter = new ParameterDescriptor()
             {
                 Name = "Parameter1",
@@ -44,7 +46,7 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
             var modelState = testContext.ModelState;
 
             // Act
-            var modelBindingResult = await argumentBinder.BindModelAsync(parameter, testContext);
+            var modelBindingResult = await parameterBinder.BindModelAsync(parameter, testContext);
 
             // Assert
             Assert.True(modelBindingResult.IsModelSet);
@@ -65,7 +67,7 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
                 "\"CompanyName\":\"Microsoft\", \"Country\":\"USA\",\"Price\": 22, " +
                 "\"ProductDetails\": {\"Detail1\": \"d2\", \"Detail2\": \"d3\", \"Detail3\": \"d4\"}}" +
                 "]";
-            var argumentBinding = ModelBindingTestHelper.GetArgumentBinder();
+            var argumentBinding = ModelBindingTestHelper.GetParameterBinder();
             var parameter = new ParameterDescriptor
             {
                 Name = "Parameter1",
@@ -98,7 +100,7 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
         {
             // Arrange
             var input = "{ \"Price\": 2, \"ProductDetails\": {\"Detail1\": \"d1\"}}";
-            var argumentBinder = ModelBindingTestHelper.GetArgumentBinder();
+            var parameterBinder = ModelBindingTestHelper.GetParameterBinder();
             var parameter = new ParameterDescriptor()
             {
                 Name = "Parameter1",
@@ -118,8 +120,14 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
 
             var modelState = testContext.ModelState;
 
+            var priceRange = ValidationAttributeUtil.GetRangeErrorMessage(20, 100, "Price");
+            var categoryRequired = ValidationAttributeUtil.GetRequiredErrorMessage("Category");
+            var contactUsRequired = ValidationAttributeUtil.GetRequiredErrorMessage("Contact Us");
+            var detail2Required = ValidationAttributeUtil.GetRequiredErrorMessage("Detail2");
+            var detail3Required = ValidationAttributeUtil.GetRequiredErrorMessage("Detail3");
+
             // Act
-            var modelBindingResult = await argumentBinder.BindModelAsync(parameter, testContext);
+            var modelBindingResult = await parameterBinder.BindModelAsync(parameter, testContext);
 
             // Assert
             Assert.True(modelBindingResult.IsModelSet);
@@ -127,21 +135,13 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
             Assert.NotNull(boundPerson);
             Assert.False(modelState.IsValid);
             var modelStateErrors = CreateValidationDictionary(modelState);
+
             Assert.Equal("CompanyName cannot be null or empty.", modelStateErrors["CompanyName"]);
-            Assert.Equal("The field Price must be between 20 and 100.", modelStateErrors["Price"]);
-            // Mono issue - https://github.com/aspnet/External/issues/19
-            Assert.Equal(
-                PlatformNormalizer.NormalizeContent("The Category field is required."),
-                modelStateErrors["Category"]);
-            Assert.Equal(
-                PlatformNormalizer.NormalizeContent("The Contact Us field is required."),
-                modelStateErrors["Contact"]);
-            Assert.Equal(
-                PlatformNormalizer.NormalizeContent("The Detail2 field is required."),
-                modelStateErrors["ProductDetails.Detail2"]);
-            Assert.Equal(
-                PlatformNormalizer.NormalizeContent("The Detail3 field is required."),
-                modelStateErrors["ProductDetails.Detail3"]);
+            Assert.Equal(priceRange, modelStateErrors["Price"]);
+            Assert.Equal(categoryRequired, modelStateErrors["Category"]);
+            Assert.Equal(contactUsRequired, modelStateErrors["Contact"]);
+            Assert.Equal(detail2Required, modelStateErrors["ProductDetails.Detail2"]);
+            Assert.Equal(detail3Required, modelStateErrors["ProductDetails.Detail3"]);
         }
 
         [Fact]
@@ -150,7 +150,7 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
             // Arrange
             var input = "{ \"Contact\":\"4255678765\", \"Category\":\"Technology\"," +
                 "\"CompanyName\":\"Microsoft\", \"Country\":\"USA\",\"Price\": 21 }";
-            var argumentBinder = ModelBindingTestHelper.GetArgumentBinder();
+            var parameterBinder = ModelBindingTestHelper.GetParameterBinder();
             var parameter = new ParameterDescriptor()
             {
                 Name = "Parameter1",
@@ -170,8 +170,10 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
 
             var modelState = testContext.ModelState;
 
+            var productDetailsRequired = ValidationAttributeUtil.GetRequiredErrorMessage("ProductDetails");
+
             // Act
-            var modelBindingResult = await argumentBinder.BindModelAsync(parameter, testContext);
+            var modelBindingResult = await parameterBinder.BindModelAsync(parameter, testContext);
 
             // Assert
             Assert.True(modelBindingResult.IsModelSet);
@@ -179,9 +181,7 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
             Assert.NotNull(boundPerson);
             Assert.False(modelState.IsValid);
             var modelStateErrors = CreateValidationDictionary(modelState);
-            Assert.Equal(
-                PlatformNormalizer.NormalizeContent("The ProductDetails field is required."),
-                modelStateErrors["ProductDetails"]);
+            Assert.Equal(productDetailsRequired, modelStateErrors["ProductDetails"]);
         }
 
         [Fact]
@@ -191,7 +191,7 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
             var input = "{ \"Contact\":\"4258959019\", \"Category\":\"Technology\"," +
                 "\"CompanyName\":\"Microsoft\", \"Country\":\"UK\",\"Price\": 21, \"ProductDetails\": {\"Detail1\": \"d1\"," +
                 " \"Detail2\": \"d2\", \"Detail3\": \"d3\"}}";
-            var argumentBinder = ModelBindingTestHelper.GetArgumentBinder();
+            var parameterBinder = ModelBindingTestHelper.GetParameterBinder();
             var parameter = new ParameterDescriptor()
             {
                 Name = "Parameter1",
@@ -212,7 +212,7 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
             var modelState = testContext.ModelState;
 
             // Act
-            var modelBindingResult = await argumentBinder.BindModelAsync(parameter, testContext);
+            var modelBindingResult = await parameterBinder.BindModelAsync(parameter, testContext);
 
             // Assert
             Assert.True(modelBindingResult.IsModelSet);
@@ -231,7 +231,7 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
             var input = "{ \"Name\": \"MVC\", \"Contact\":\"4258959019\", \"Category\":\"Technology\"," +
                 "\"CompanyName\":\"Microsoft\", \"Country\":\"USA\", \"Version\":\"2\"," +
                 "\"DatePurchased\": \"/Date(1297246301973)/\", \"Price\" : \"110\" }";
-            var argumentBinder = ModelBindingTestHelper.GetArgumentBinder();
+            var parameterBinder = ModelBindingTestHelper.GetParameterBinder();
             var parameter = new ParameterDescriptor()
             {
                 Name = "Parameter1",
@@ -252,7 +252,7 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
             var modelState = testContext.ModelState;
 
             // Act
-            var modelBindingResult = await argumentBinder.BindModelAsync(parameter, testContext);
+            var modelBindingResult = await parameterBinder.BindModelAsync(parameter, testContext);
 
             // Assert
             Assert.True(modelBindingResult.IsModelSet);
@@ -267,7 +267,7 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
             // Arrange
             var input = "{ \"Name\": \"MVC\", \"Contact\":\"425-895-9019\", \"Category\":\"Technology\"," +
                 "\"CompanyName\":\"Microsoft\", \"Country\":\"USA\",\"Price\": 2}";
-            var argumentBinder = ModelBindingTestHelper.GetArgumentBinder();
+            var parameterBinder = ModelBindingTestHelper.GetParameterBinder();
             var parameter = new ParameterDescriptor()
             {
                 Name = "Parameter1",
@@ -287,8 +287,11 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
 
             var modelState = testContext.ModelState;
 
+            var priceRange = ValidationAttributeUtil.GetRangeErrorMessage(100, 200, "Price");
+            var contactLength = ValidationAttributeUtil.GetStringLengthErrorMessage(null, 10, "Contact");
+
             // Act
-            var modelBindingResult = await argumentBinder.BindModelAsync(parameter, testContext);
+            var modelBindingResult = await parameterBinder.BindModelAsync(parameter, testContext);
 
             // Assert
             Assert.True(modelBindingResult.IsModelSet);
@@ -297,10 +300,9 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
             Assert.False(modelState.IsValid);
             var modelStateErrors = CreateValidationDictionary(modelState);
             Assert.Equal(2, modelStateErrors.Count);
-            Assert.Equal("The field Price must be between 100 and 200.", modelStateErrors["Price"]);
-            Assert.Equal(
-                "The field Contact must be a string with a maximum length of 10.",
-                modelStateErrors["Contact"]);
+
+            Assert.Equal(priceRange, modelStateErrors["Price"]);
+            Assert.Equal(contactLength, modelStateErrors["Contact"]);
         }
 
         [Fact]
@@ -310,7 +312,7 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
             var input = "{ \"Contact\":\"4258959019\", \"Category\":\"Technology\"," +
                 "\"CompanyName\":\"Microsoft\", \"Country\":\"UK\",\"Version\":\"2\"," +
                 "\"DatePurchased\": \"/Date(1297246301973)/\", \"Price\" : \"110\" }";
-            var argumentBinder = ModelBindingTestHelper.GetArgumentBinder();
+            var parameterBinder = ModelBindingTestHelper.GetParameterBinder();
             var parameter = new ParameterDescriptor()
             {
                 Name = "Parameter1",
@@ -331,7 +333,7 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
             var modelState = testContext.ModelState;
 
             // Act
-            var modelBindingResult = await argumentBinder.BindModelAsync(parameter, testContext);
+            var modelBindingResult = await parameterBinder.BindModelAsync(parameter, testContext);
 
             // Assert
             Assert.True(modelBindingResult.IsModelSet);
@@ -356,10 +358,9 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
         }
 
         [Fact]
-        public async Task FromBodyAndRequiredOnProperty_EmptyBody_AddsModelStateError()
+        public async Task FromBodyAllowingEmptyInputAndRequiredOnProperty_EmptyBody_AddsModelStateError()
         {
             // Arrange
-            var argumentBinder = ModelBindingTestHelper.GetArgumentBinder();
             var parameter = new ParameterDescriptor()
             {
                 Name = "Parameter1",
@@ -376,11 +377,14 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
                   request.Body = new MemoryStream(Encoding.UTF8.GetBytes(string.Empty));
                   request.ContentType = "application/json";
               });
+            testContext.MvcOptions.AllowEmptyInputInBodyModelBinding = true;
 
             var modelState = testContext.ModelState;
+            var addressRequired = ValidationAttributeUtil.GetRequiredErrorMessage("Address");
+            var parameterBinder = ModelBindingTestHelper.GetParameterBinder(testContext.HttpContext.RequestServices);
 
             // Act
-            var modelBindingResult = await argumentBinder.BindModelAsync(parameter, testContext);
+            var modelBindingResult = await parameterBinder.BindModelAsync(parameter, testContext);
 
             // Assert
             Assert.True(modelBindingResult.IsModelSet);
@@ -390,15 +394,13 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
             Assert.Equal("CustomParameter.Address", key);
             Assert.False(modelState.IsValid);
             var error = Assert.Single(modelState[key].Errors);
-            // Mono issue - https://github.com/aspnet/External/issues/19
-            Assert.Equal(PlatformNormalizer.NormalizeContent("The Address field is required."), error.ErrorMessage);
+            Assert.Equal(addressRequired, error.ErrorMessage);
         }
 
         [Fact]
-        public async Task FromBodyOnActionParameter_EmptyBody_BindsToNullValue()
+        public async Task FromBodyAllowingEmptyInputOnActionParameter_EmptyBody_BindsToNullValue()
         {
             // Arrange
-            var argumentBinder = ModelBindingTestHelper.GetArgumentBinder();
             var parameter = new ParameterDescriptor
             {
                 Name = "Parameter1",
@@ -416,12 +418,13 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
                     request.Body = new MemoryStream(Encoding.UTF8.GetBytes(string.Empty));
                     request.ContentType = "application/json";
                 });
+            testContext.MvcOptions.AllowEmptyInputInBodyModelBinding = true;
 
-            var httpContext = testContext.HttpContext;
             var modelState = testContext.ModelState;
+            var parameterBinder = ModelBindingTestHelper.GetParameterBinder(testContext.HttpContext.RequestServices);
 
             // Act
-            var modelBindingResult = await argumentBinder.BindModelAsync(parameter, testContext);
+            var modelBindingResult = await parameterBinder.BindModelAsync(parameter, testContext);
 
             // Assert
             Assert.True(modelBindingResult.IsModelSet);
@@ -438,11 +441,22 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
             public int Address { get; set; }
         }
 
-        [Fact]
+        [Fact] // This tests the 2.0 behavior. Error messages from JSON.NET are not preserved.
         public async Task FromBodyAndRequiredOnValueTypeProperty_EmptyBody_JsonFormatterAddsModelStateError()
         {
             // Arrange
-            var argumentBinder = ModelBindingTestHelper.GetArgumentBinder();
+            var testContext = ModelBindingTestHelper.GetTestContext(
+                request =>
+                {
+                    request.Body = new MemoryStream(Encoding.UTF8.GetBytes(string.Empty));
+                    request.ContentType = "application/json";
+                });
+
+            // Override the AllowInputFormatterExceptionMessages setting ModelBindingTestHelper chooses.
+            var options = testContext.GetService<IOptions<MvcJsonOptions>>().Value;
+            options.AllowInputFormatterExceptionMessages = false;
+
+            var parameterBinder = ModelBindingTestHelper.GetParameterBinder(testContext.HttpContext.RequestServices);
             var parameter = new ParameterDescriptor
             {
                 Name = "Parameter1",
@@ -453,17 +467,10 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
                 ParameterType = typeof(Person4)
             };
 
-            var testContext = ModelBindingTestHelper.GetTestContext(
-                request =>
-                {
-                    request.Body = new MemoryStream(Encoding.UTF8.GetBytes(string.Empty));
-                    request.ContentType = "application/json";
-                });
-
             var modelState = testContext.ModelState;
 
             // Act
-            var modelBindingResult = await argumentBinder.BindModelAsync(parameter, testContext);
+            var modelBindingResult = await parameterBinder.BindModelAsync(parameter, testContext);
 
             // Assert
             Assert.True(modelBindingResult.IsModelSet);
@@ -475,11 +482,10 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
             Assert.Null(entry.Value.AttemptedValue);
             Assert.Null(entry.Value.RawValue);
             var error = Assert.Single(entry.Value.Errors);
-            Assert.NotNull(error.Exception);
 
-            // Json.NET currently throws an exception starting with "No JSON content found and type 'System.Int32' is
-            // not nullable." but do not tie test to a particular Json.NET build.
-            Assert.NotEmpty(error.Exception.Message);
+            // Update me in 3.0 when MvcJsonOptions.AllowInputFormatterExceptionMessages is removed
+            Assert.IsType<JsonSerializationException>(error.Exception);
+            Assert.Empty(error.ErrorMessage);
         }
 
         private class Person5
@@ -501,7 +507,7 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
         public async Task FromBodyAndRequiredOnInnerValueTypeProperty_NotBound_JsonFormatterSuccessful()
         {
             // Arrange
-            var argumentBinder = ModelBindingTestHelper.GetArgumentBinder();
+            var parameterBinder = ModelBindingTestHelper.GetParameterBinder();
             var parameter = new ParameterDescriptor
             {
                 Name = "Parameter1",
@@ -522,7 +528,7 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
             var modelState = testContext.ModelState;
 
             // Act
-            var modelBindingResult = await argumentBinder.BindModelAsync(parameter, testContext);
+            var modelBindingResult = await parameterBinder.BindModelAsync(parameter, testContext);
 
             // Assert
             Assert.True(modelBindingResult.IsModelSet);
@@ -535,11 +541,65 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
             Assert.Empty(modelState);
         }
 
-        [Fact]
+        [Fact] // This test covers the 2.0 behavior. Error messages from JSON.Net are preserved.
         public async Task FromBodyWithInvalidPropertyData_JsonFormatterAddsModelError()
         {
             // Arrange
-            var argumentBinder = ModelBindingTestHelper.GetArgumentBinder();
+            var testContext = ModelBindingTestHelper.GetTestContext(
+                request =>
+                {
+                    request.Body = new MemoryStream(Encoding.UTF8.GetBytes("{ \"Number\": \"not a number\" }"));
+                    request.ContentType = "application/json";
+                });
+
+            // Override the AllowInputFormatterExceptionMessages setting ModelBindingTestHelper chooses.
+            var options = testContext.GetService<IOptions<MvcJsonOptions>>().Value;
+            options.AllowInputFormatterExceptionMessages = false;
+
+            var parameterBinder = ModelBindingTestHelper.GetParameterBinder(testContext.HttpContext.RequestServices);
+            var parameter = new ParameterDescriptor
+            {
+                Name = "Parameter1",
+                BindingInfo = new BindingInfo
+                {
+                    BinderModelName = "CustomParameter",
+                },
+                ParameterType = typeof(Person5)
+            };
+
+            var modelState = testContext.ModelState;
+
+            // Act
+            var modelBindingResult = await parameterBinder.BindModelAsync(parameter, testContext);
+
+            // Assert
+            Assert.True(modelBindingResult.IsModelSet);
+            var boundPerson = Assert.IsType<Person5>(modelBindingResult.Model);
+            Assert.Null(boundPerson.Address);
+
+            Assert.False(modelState.IsValid);
+            Assert.Single(modelState);
+            Assert.Equal(1, modelState.ErrorCount);
+
+            var state = modelState["CustomParameter.Address.Number"];
+            Assert.NotNull(state);
+            Assert.Null(state.AttemptedValue);
+            Assert.Null(state.RawValue);
+            var error = Assert.Single(state.Errors);
+
+            // Update me in 3.0 when MvcJsonOptions.AllowInputFormatterExceptionMessages is removed
+            Assert.IsType<JsonReaderException>(error.Exception);
+            Assert.Empty(error.ErrorMessage);
+        }
+
+        [Theory]
+        [InlineData(false, false)]
+        [InlineData(true, true)]
+        public async Task FromBodyWithEmptyBody_JsonFormatterAddsModelErrorWhenExpected(
+            bool allowEmptyInputInBodyModelBindingSetting,
+            bool expectedModelStateIsValid)
+        {
+            // Arrange
             var parameter = new ParameterDescriptor
             {
                 Name = "Parameter1",
@@ -553,34 +613,39 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
             var testContext = ModelBindingTestHelper.GetTestContext(
                 request =>
                 {
-                    request.Body = new MemoryStream(Encoding.UTF8.GetBytes("{ \"Number\": \"not a number\" }"));
+                    request.Body = new MemoryStream(Encoding.UTF8.GetBytes(string.Empty));
                     request.ContentType = "application/json";
-                });
+                },
+                options => options.AllowEmptyInputInBodyModelBinding = allowEmptyInputInBodyModelBindingSetting);
 
             var modelState = testContext.ModelState;
+            var parameterBinder = ModelBindingTestHelper.GetParameterBinder(testContext.HttpContext.RequestServices);
 
             // Act
-            var modelBindingResult = await argumentBinder.BindModelAsync(parameter, testContext);
+            var modelBindingResult = await parameterBinder.BindModelAsync(parameter, testContext);
 
             // Assert
             Assert.True(modelBindingResult.IsModelSet);
             var boundPerson = Assert.IsType<Person5>(modelBindingResult.Model);
-            Assert.Null(boundPerson.Address);
+            Assert.NotNull(boundPerson);
 
-            Assert.False(modelState.IsValid);
-            Assert.Equal(1, modelState.Count);
-            Assert.Equal(1, modelState.ErrorCount);
+            if (expectedModelStateIsValid)
+            {
+                Assert.True(modelState.IsValid);
+            }
+            else
+            {
+                Assert.False(modelState.IsValid);
+                var entry = Assert.Single(modelState);
+                Assert.Equal("CustomParameter.Address", entry.Key);
+                var street = entry.Value;
+                Assert.Equal(ModelValidationState.Invalid, street.ValidationState);
+                var error = Assert.Single(street.Errors);
 
-            var state = modelState["CustomParameter.Address.Number"];
-            Assert.NotNull(state);
-            Assert.Null(state.AttemptedValue);
-            Assert.Null(state.RawValue);
-            var error = Assert.Single(state.Errors);
-            Assert.NotNull(error.Exception);
-
-            // Json.NET currently throws an Exception with a Message starting with "Could not convert string to
-            // integer: not a number." but do not tie test to a particular Json.NET build.
-            Assert.NotEmpty(error.Exception.Message);
+                // Since the message doesn't come from DataAnnotations, we don't have a way to get the
+                // exact string, so just check it's nonempty.
+                Assert.NotEmpty(error.ErrorMessage);
+            }
         }
 
         private class Person2
@@ -603,7 +668,7 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
         public async Task FromBodyOnTopLevelProperty_RequiredOnSubProperty_AddsModelStateError(string inputText)
         {
             // Arrange
-            var argumentBinder = ModelBindingTestHelper.GetArgumentBinder();
+            var parameterBinder = ModelBindingTestHelper.GetParameterBinder();
             var parameter = new ParameterDescriptor
             {
                 BindingInfo = new BindingInfo
@@ -623,8 +688,10 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
             var httpContext = testContext.HttpContext;
             var modelState = testContext.ModelState;
 
+            var streetRequired = ValidationAttributeUtil.GetRequiredErrorMessage("Street");
+
             // Act
-            var modelBindingResult = await argumentBinder.BindModelAsync(parameter, testContext);
+            var modelBindingResult = await parameterBinder.BindModelAsync(parameter, testContext);
 
             // Assert
             Assert.True(modelBindingResult.IsModelSet);
@@ -637,8 +704,7 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
             var street = entry.Value;
             Assert.Equal(ModelValidationState.Invalid, street.ValidationState);
             var error = Assert.Single(street.Errors);
-            // Mono issue - https://github.com/aspnet/External/issues/19
-            Assert.Equal(PlatformNormalizer.NormalizeContent("The Street field is required."), error.ErrorMessage);
+            Assert.Equal(streetRequired, error.ErrorMessage);
         }
 
         private class Person3
@@ -661,7 +727,7 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
         public async Task FromBodyOnProperty_Succeeds_IgnoresRequiredOnValueTypeSubProperty(string inputText)
         {
             // Arrange
-            var argumentBinder = ModelBindingTestHelper.GetArgumentBinder();
+            var parameterBinder = ModelBindingTestHelper.GetParameterBinder();
             var parameter = new ParameterDescriptor
             {
                 BindingInfo = new BindingInfo
@@ -681,7 +747,7 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
             var modelState = testContext.ModelState;
 
             // Act
-            var modelBindingResult = await argumentBinder.BindModelAsync(parameter, testContext);
+            var modelBindingResult = await parameterBinder.BindModelAsync(parameter, testContext);
 
             // Assert
             Assert.True(modelBindingResult.IsModelSet);
@@ -717,7 +783,16 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
                 .ForProperty<Person6>(nameof(Person6.Address))
                 .BindingDetails(binding => binding.BindingSource = BindingSource.Body);
 
-            var argumentBinder = ModelBindingTestHelper.GetArgumentBinder(metadataProvider);
+            var testContext = ModelBindingTestHelper.GetTestContext(
+                request =>
+                {
+                    request.Body = new MemoryStream(Encoding.UTF8.GetBytes(inputText));
+                    request.ContentType = "application/json";
+                },
+                metadataProvider: metadataProvider);
+
+            var modelState = testContext.ModelState;
+            var parameterBinder = ModelBindingTestHelper.GetParameterBinder(testContext.HttpContext.RequestServices);
             var parameter = new ParameterDescriptor
             {
                 Name = "parameter-name",
@@ -725,17 +800,8 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
                 ParameterType = typeof(Person6),
             };
 
-            var testContext = ModelBindingTestHelper.GetTestContext(
-                request =>
-                {
-                    request.Body = new MemoryStream(Encoding.UTF8.GetBytes(inputText));
-                    request.ContentType = "application/json";
-                });
-            testContext.MetadataProvider = metadataProvider;
-            var modelState = testContext.ModelState;
-
             // Act
-            var modelBindingResult = await argumentBinder.BindModelAsync(parameter, testContext);
+            var modelBindingResult = await parameterBinder.BindModelAsync(parameter, testContext);
 
             // Assert
             Assert.True(modelBindingResult.IsModelSet);
@@ -763,7 +829,16 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
                 .ForType<Address6>()
                 .BindingDetails(binding => binding.BindingSource = BindingSource.Body);
 
-            var argumentBinder = ModelBindingTestHelper.GetArgumentBinder(metadataProvider);
+            var testContext = ModelBindingTestHelper.GetTestContext(
+                request =>
+                {
+                    request.Body = new MemoryStream(Encoding.UTF8.GetBytes(inputText));
+                    request.ContentType = "application/json";
+                },
+                metadataProvider: metadataProvider);
+
+            var modelState = testContext.ModelState;
+            var parameterBinder = ModelBindingTestHelper.GetParameterBinder(testContext.HttpContext.RequestServices);
             var parameter = new ParameterDescriptor
             {
                 Name = "parameter-name",
@@ -771,17 +846,8 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
                 ParameterType = typeof(Address6),
             };
 
-            var testContext = ModelBindingTestHelper.GetTestContext(
-                request =>
-                {
-                    request.Body = new MemoryStream(Encoding.UTF8.GetBytes(inputText));
-                    request.ContentType = "application/json";
-                });
-            testContext.MetadataProvider = metadataProvider;
-            var modelState = testContext.ModelState;
-
             // Act
-            var modelBindingResult = await argumentBinder.BindModelAsync(parameter, testContext);
+            var modelBindingResult = await parameterBinder.BindModelAsync(parameter, testContext);
 
             // Assert
             Assert.True(modelBindingResult.IsModelSet);

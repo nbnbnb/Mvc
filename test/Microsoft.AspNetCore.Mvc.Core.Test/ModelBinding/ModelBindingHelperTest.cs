@@ -10,11 +10,13 @@ using System.Linq.Expressions;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.DataAnnotations;
-using Microsoft.AspNetCore.Mvc.DataAnnotations.Internal;
-using Microsoft.AspNetCore.Mvc.Internal;
 using Microsoft.AspNetCore.Mvc.ModelBinding.Binders;
-using Microsoft.AspNetCore.Mvc.ModelBinding.Internal;
 using Microsoft.AspNetCore.Mvc.ModelBinding.Validation;
+using Microsoft.AspNetCore.Testing;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Moq;
 using Xunit;
 
@@ -34,7 +36,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             var result = await ModelBindingHelper.TryUpdateModelAsync(
                 model,
                 string.Empty,
-                new ActionContext() { HttpContext = new DefaultHttpContext() },
+                GetActionContext(),
                 metadataProvider,
                 GetModelBinderFactory(binder),
                 Mock.Of<IValueProvider>(),
@@ -49,8 +51,6 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
         public async Task TryUpdateModel_ReturnsFalse_IfModelValidationFails()
         {
             // Arrange
-            // Mono issue - https://github.com/aspnet/External/issues/19
-            var expectedMessage = PlatformNormalizer.NormalizeContent("The MyProperty field is required.");
             var binderProviders = new IModelBinderProvider[]
             {
                 new SimpleTypeModelBinderProvider(),
@@ -59,7 +59,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
 
             var validator = new DataAnnotationsModelValidatorProvider(
                 new ValidationAttributeAdapterProvider(),
-                new TestOptionsManager<MvcDataAnnotationsLocalizationOptions>(),
+                Options.Create(new MvcDataAnnotationsLocalizationOptions()),
                 stringLocalizerFactory: null);
             var model = new MyModel();
 
@@ -70,7 +70,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             var valueProvider = new TestValueProvider(values);
             var metadataProvider = TestModelMetadataProvider.CreateDefaultProvider();
 
-            var actionContext = new ActionContext() { HttpContext = new DefaultHttpContext() };
+            var actionContext = GetActionContext();
             var modelState = actionContext.ModelState;
 
             // Act
@@ -81,12 +81,12 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
                 metadataProvider,
                 GetModelBinderFactory(binderProviders),
                 valueProvider,
-                new DefaultObjectValidator(metadataProvider, new[] { validator }));
+                new DefaultObjectValidator(metadataProvider, new[] { validator }, new MvcOptions()));
 
             // Assert
             Assert.False(result);
             var error = Assert.Single(modelState["MyProperty"].Errors);
-            Assert.Equal(expectedMessage, error.ErrorMessage);
+            Assert.Equal(ValidationAttributeUtil.GetRequiredErrorMessage("MyProperty"), error.ErrorMessage);
         }
 
         [Fact]
@@ -101,7 +101,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
 
             var validator = new DataAnnotationsModelValidatorProvider(
                 new ValidationAttributeAdapterProvider(),
-                new TestOptionsManager<MvcDataAnnotationsLocalizationOptions>(),
+                Options.Create(new MvcDataAnnotationsLocalizationOptions()),
                 stringLocalizerFactory: null);
             var model = new MyModel { MyProperty = "Old-Value" };
 
@@ -117,11 +117,11 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             var result = await ModelBindingHelper.TryUpdateModelAsync(
                 model,
                 "",
-                new ActionContext() { HttpContext = new DefaultHttpContext() },
+                GetActionContext(),
                 metadataProvider,
                 GetModelBinderFactory(binderProviders),
                 valueProvider,
-                new DefaultObjectValidator(metadataProvider, new[] { validator }));
+                new DefaultObjectValidator(metadataProvider, new[] { validator }, new MvcOptions()));
 
             // Assert
             Assert.True(result);
@@ -141,7 +141,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             var result = await ModelBindingHelper.TryUpdateModelAsync(
                 model,
                 string.Empty,
-                new ActionContext() { HttpContext = new DefaultHttpContext() },
+                GetActionContext(),
                 metadataProvider,
                 GetModelBinderFactory(binder),
                 Mock.Of<IValueProvider>(),
@@ -167,7 +167,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
 
             var validator = new DataAnnotationsModelValidatorProvider(
                 new ValidationAttributeAdapterProvider(),
-                new TestOptionsManager<MvcDataAnnotationsLocalizationOptions>(),
+                Options.Create(new MvcDataAnnotationsLocalizationOptions()),
                 stringLocalizerFactory: null);
             var model = new MyModel
             {
@@ -195,11 +195,11 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             var result = await ModelBindingHelper.TryUpdateModelAsync(
                 model,
                 "",
-                new ActionContext() { HttpContext = new DefaultHttpContext() },
+                GetActionContext(),
                 metadataProvider,
                 GetModelBinderFactory(binderProviders),
                 valueProvider,
-                new DefaultObjectValidator(metadataProvider, new[] { validator }),
+                new DefaultObjectValidator(metadataProvider, new[] { validator }, new MvcOptions()),
                 propertyFilter);
 
             // Assert
@@ -221,7 +221,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             var result = await ModelBindingHelper.TryUpdateModelAsync(
                 model,
                 string.Empty,
-                new ActionContext() { HttpContext = new DefaultHttpContext() },
+                GetActionContext(),
                 metadataProvider,
                 GetModelBinderFactory(binder),
                 Mock.Of<IValueProvider>(),
@@ -247,7 +247,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
 
             var validator = new DataAnnotationsModelValidatorProvider(
                 new ValidationAttributeAdapterProvider(),
-                new TestOptionsManager<MvcDataAnnotationsLocalizationOptions>(),
+                Options.Create(new MvcDataAnnotationsLocalizationOptions()),
                 stringLocalizerFactory: null);
             var model = new MyModel
             {
@@ -271,11 +271,11 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             var result = await ModelBindingHelper.TryUpdateModelAsync(
                 model,
                 "",
-                new ActionContext() { HttpContext = new DefaultHttpContext() },
+                GetActionContext(),
                 TestModelMetadataProvider.CreateDefaultProvider(),
                 GetModelBinderFactory(binderProviders),
                 valueProvider,
-                new DefaultObjectValidator(metadataProvider, new[] { validator }),
+                new DefaultObjectValidator(metadataProvider, new[] { validator }, new MvcOptions()),
                 m => m.IncludedProperty,
                 m => m.MyProperty);
 
@@ -298,7 +298,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
 
             var validator = new DataAnnotationsModelValidatorProvider(
                 new ValidationAttributeAdapterProvider(),
-                new TestOptionsManager<MvcDataAnnotationsLocalizationOptions>(),
+                Options.Create(new MvcDataAnnotationsLocalizationOptions()),
                 stringLocalizerFactory: null);
             var model = new MyModel
             {
@@ -322,11 +322,11 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             var result = await ModelBindingHelper.TryUpdateModelAsync(
                 model,
                 "",
-                new ActionContext() { HttpContext = new DefaultHttpContext() },
+                GetActionContext(),
                 metadataProvider,
                 GetModelBinderFactory(binderProviders),
                 valueProvider,
-                new DefaultObjectValidator(metadataProvider, new[] { validator }));
+                new DefaultObjectValidator(metadataProvider, new[] { validator }, new MvcOptions()));
 
             // Assert
             // Includes everything.
@@ -469,7 +469,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
                 model,
                 model.GetType(),
                 prefix: "",
-                actionContext: new ActionContext() { HttpContext = new DefaultHttpContext() },
+                actionContext: GetActionContext(),
                 metadataProvider: metadataProvider,
                 modelBinderFactory: GetModelBinderFactory(binder),
                 valueProvider: Mock.Of<IValueProvider>(),
@@ -495,7 +495,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
 
             var validator = new DataAnnotationsModelValidatorProvider(
                 new ValidationAttributeAdapterProvider(),
-                new TestOptionsManager<MvcDataAnnotationsLocalizationOptions>(),
+                Options.Create(new MvcDataAnnotationsLocalizationOptions()),
                 stringLocalizerFactory: null);
             var model = new MyModel
             {
@@ -524,11 +524,11 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
                 model,
                 model.GetType(),
                 "",
-                new ActionContext() { HttpContext = new DefaultHttpContext() },
+                GetActionContext(),
                 metadataProvider,
                 GetModelBinderFactory(binderProviders),
                 valueProvider,
-                new DefaultObjectValidator(metadataProvider, new[] { validator }),
+                new DefaultObjectValidator(metadataProvider, new[] { validator }, new MvcOptions()),
                 propertyFilter);
 
             // Assert
@@ -552,7 +552,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
                 model,
                 modelType: model.GetType(),
                 prefix: "",
-                actionContext: new ActionContext() { HttpContext = new DefaultHttpContext() },
+                actionContext: GetActionContext(),
                 metadataProvider: metadataProvider,
                 modelBinderFactory: GetModelBinderFactory(binder.Object),
                 valueProvider: Mock.Of<IValueProvider>(),
@@ -575,7 +575,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
 
             var validator = new DataAnnotationsModelValidatorProvider(
                 new ValidationAttributeAdapterProvider(),
-                new TestOptionsManager<MvcDataAnnotationsLocalizationOptions>(),
+                Options.Create(new MvcDataAnnotationsLocalizationOptions()),
                 stringLocalizerFactory: null);
             var model = new MyModel { MyProperty = "Old-Value" };
 
@@ -592,11 +592,11 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
                 model,
                 model.GetType(),
                 "",
-                new ActionContext() { HttpContext = new DefaultHttpContext() },
+                GetActionContext(),
                 metadataProvider,
                 GetModelBinderFactory(binderProviders),
                 valueProvider,
-                new DefaultObjectValidator(metadataProvider, new[] { validator }));
+                new DefaultObjectValidator(metadataProvider, new[] { validator }, new MvcOptions()));
 
             // Assert
             Assert.True(result);
@@ -604,7 +604,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
         }
 
         [Fact]
-        public async Task TryUpdataModel_ModelTypeDifferentFromModel_Throws()
+        public async Task TryUpdateModel_ModelTypeDifferentFromModel_Throws()
         {
             // Arrange
             var metadataProvider = new EmptyModelMetadataProvider();
@@ -613,25 +613,24 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             var model = new MyModel();
             Func<ModelMetadata, bool> propertyFilter = (m) => true;
 
+            var modelName = model.GetType().FullName;
+            var userName = typeof(User).FullName;
+            var expectedMessage = $"The model's runtime type '{modelName}' is not assignable to the type '{userName}'.";
+
             // Act & Assert
-            var exception = await Assert.ThrowsAsync<ArgumentException>(
+            var exception = await ExceptionAssert.ThrowsArgumentAsync(
                 () => ModelBindingHelper.TryUpdateModelAsync(
                     model,
                     typeof(User),
                     "",
-                    new ActionContext() { HttpContext = new DefaultHttpContext() },
+                    GetActionContext(),
                     metadataProvider,
                     GetModelBinderFactory(binder.Object),
                     Mock.Of<IValueProvider>(),
                     new Mock<IObjectModelValidator>(MockBehavior.Strict).Object,
-                    propertyFilter));
-
-            var expectedMessage = string.Format("The model's runtime type '{0}' is not assignable to the type '{1}'." +
-                Environment.NewLine +
-                "Parameter name: modelType",
-                model.GetType().FullName,
-                typeof(User).FullName);
-            Assert.Equal(expectedMessage, exception.Message);
+                    propertyFilter),
+                "modelType",
+                expectedMessage);
         }
 
         [Theory]
@@ -654,14 +653,14 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             ModelBindingHelper.ClearValidationStateForModel(modelMetadata, dictionary, modelKey);
 
             // Assert
-            Assert.Equal(0, dictionary["Name"].Errors.Count);
+            Assert.Empty(dictionary["Name"].Errors);
             Assert.Equal(ModelValidationState.Unvalidated, dictionary["Name"].ValidationState);
-            Assert.Equal(0, dictionary["Id"].Errors.Count);
+            Assert.Empty(dictionary["Id"].Errors);
             Assert.Equal(ModelValidationState.Unvalidated, dictionary["Id"].ValidationState);
-            Assert.Equal(0, dictionary["Category"].Errors.Count);
+            Assert.Empty(dictionary["Category"].Errors);
             Assert.Equal(ModelValidationState.Unvalidated, dictionary["Category"].ValidationState);
 
-            Assert.Equal(1, dictionary["Unrelated"].Errors.Count);
+            Assert.Single(dictionary["Unrelated"].Errors);
             Assert.Equal(ModelValidationState.Invalid, dictionary["Unrelated"].ValidationState);
         }
 
@@ -683,10 +682,10 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             ModelBindingHelper.ClearValidationStateForModel(modelMetadata, dictionary, modelKey);
 
             // Assert
-            Assert.Equal(0, dictionary[string.Empty].Errors.Count);
+            Assert.Empty(dictionary[string.Empty].Errors);
             Assert.Equal(ModelValidationState.Unvalidated, dictionary[string.Empty].ValidationState);
 
-            Assert.Equal(1, dictionary["Unrelated"].Errors.Count);
+            Assert.Single(dictionary["Unrelated"].Errors);
             Assert.Equal(ModelValidationState.Invalid, dictionary["Unrelated"].ValidationState);
         }
 
@@ -714,20 +713,20 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             ModelBindingHelper.ClearValidationStateForModel(modelMetadata, dictionary, modelKey);
 
             // Assert
-            Assert.Equal(0, dictionary["[0].Name"].Errors.Count);
+            Assert.Empty(dictionary["[0].Name"].Errors);
             Assert.Equal(ModelValidationState.Unvalidated, dictionary["[0].Name"].ValidationState);
-            Assert.Equal(0, dictionary["[0].Id"].Errors.Count);
+            Assert.Empty(dictionary["[0].Id"].Errors);
             Assert.Equal(ModelValidationState.Unvalidated, dictionary["[0].Id"].ValidationState);
-            Assert.Equal(0, dictionary["[0].Category"].Errors.Count);
+            Assert.Empty(dictionary["[0].Category"].Errors);
             Assert.Equal(ModelValidationState.Unvalidated, dictionary["[0].Category"].ValidationState);
-            Assert.Equal(0, dictionary["[1].Name"].Errors.Count);
+            Assert.Empty(dictionary["[1].Name"].Errors);
             Assert.Equal(ModelValidationState.Unvalidated, dictionary["[1].Name"].ValidationState);
-            Assert.Equal(0, dictionary["[1].Id"].Errors.Count);
+            Assert.Empty(dictionary["[1].Id"].Errors);
             Assert.Equal(ModelValidationState.Unvalidated, dictionary["[1].Id"].ValidationState);
-            Assert.Equal(0, dictionary["[1].Category"].Errors.Count);
+            Assert.Empty(dictionary["[1].Category"].Errors);
             Assert.Equal(ModelValidationState.Unvalidated, dictionary["[1].Category"].ValidationState);
 
-            Assert.Equal(1, dictionary["Unrelated"].Errors.Count);
+            Assert.Single(dictionary["Unrelated"].Errors);
             Assert.Equal(ModelValidationState.Invalid, dictionary["Unrelated"].ValidationState);
         }
 
@@ -763,7 +762,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             {
                 if (entry.StartsWith(prefix))
                 {
-                    Assert.Equal(0, dictionary[entry].Errors.Count);
+                    Assert.Empty(dictionary[entry].Errors);
                     Assert.Equal(ModelValidationState.Unvalidated, dictionary[entry].ValidationState);
                 }
             }
@@ -845,14 +844,14 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
         [Fact]
         public void ConvertTo_ReturnsNullForReferenceTypes_WhenValueIsNull()
         {
-            var convertedValue = ModelBindingHelper.ConvertTo(null, typeof(string));
+            var convertedValue = ModelBindingHelper.ConvertTo(value: null, type: typeof(string), culture: null);
             Assert.Null(convertedValue);
         }
 
         [Fact]
         public void ConvertTo_ReturnsDefaultForValueTypes_WhenValueIsNull()
         {
-            var convertedValue = ModelBindingHelper.ConvertTo(null, typeof(int));
+            var convertedValue = ModelBindingHelper.ConvertTo(value: null, type: typeof(int), culture: null);
             Assert.Equal(0, convertedValue);
         }
 
@@ -863,7 +862,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             var value = new int[] { 1, 20, 42 };
 
             // Act
-            var converted = ModelBindingHelper.ConvertTo(value, typeof(string));
+            var converted = ModelBindingHelper.ConvertTo(value, typeof(string), culture: null);
 
             // Assert
             Assert.Equal("1", converted);
@@ -876,7 +875,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             var value = 42;
 
             // Act
-            var converted = ModelBindingHelper.ConvertTo<string[]>(value);
+            var converted = ModelBindingHelper.ConvertTo<string[]>(value, culture: null);
 
             // Assert
             Assert.NotNull(converted);
@@ -890,7 +889,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             // Arrange
 
             // Act
-            var converted = ModelBindingHelper.ConvertTo<string>(42);
+            var converted = ModelBindingHelper.ConvertTo<string>(42, culture: null);
 
             // Assert
             Assert.NotNull(converted);
@@ -903,10 +902,10 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             // Arrange
 
             // Act
-            var returned = ModelBindingHelper.ConvertTo<int?>(null);
+            var returned = ModelBindingHelper.ConvertTo<int?>(value: null, culture: null);
 
             // Assert
-            Assert.Equal(returned, null);
+            Assert.Null(returned);
         }
 
         [Fact]
@@ -916,10 +915,10 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             var original = " ";
 
             // Act
-            var returned = ModelBindingHelper.ConvertTo<int?>(original);
+            var returned = ModelBindingHelper.ConvertTo<int?>(original, culture: null);
 
             // Assert
-            Assert.Equal(returned, null);
+            Assert.Null(returned);
         }
 
         [Fact]
@@ -928,7 +927,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             // Arrange
 
             // Act
-            var outValue = ModelBindingHelper.ConvertTo(new string[] { null }, typeof(int));
+            var outValue = ModelBindingHelper.ConvertTo(new string[] { null }, typeof(int), culture: null);
 
             // Assert
             Assert.Null(outValue);
@@ -940,7 +939,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             // Arrange
 
             // Act
-            var outValue = ModelBindingHelper.ConvertTo(new int[0], typeof(int));
+            var outValue = ModelBindingHelper.ConvertTo(new int[0], typeof(int), culture: null);
 
             // Assert
             Assert.Null(outValue);
@@ -953,7 +952,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
         {
             // Arrange
             // Act
-            var outValue = ModelBindingHelper.ConvertTo(value, typeof(int));
+            var outValue = ModelBindingHelper.ConvertTo(value, typeof(int), culture: null);
 
             // Assert
             Assert.Null(outValue);
@@ -965,7 +964,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             // Arrange
 
             // Act
-            var outValue = ModelBindingHelper.ConvertTo(null, typeof(int[]));
+            var outValue = ModelBindingHelper.ConvertTo(value: null, type: typeof(int[]), culture: null);
 
             // Assert
             Assert.Null(outValue);
@@ -977,10 +976,10 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             // Arrange
 
             // Act
-            var outValue = ModelBindingHelper.ConvertTo(new object[] { 1 }, typeof(IntEnum));
+            var outValue = ModelBindingHelper.ConvertTo(new object[] { 1 }, typeof(IntEnum), culture: null);
 
             // Assert
-            Assert.Equal(outValue, IntEnum.Value1);
+            Assert.Equal(IntEnum.Value1, outValue);
         }
 
         [Theory]
@@ -1010,7 +1009,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             // Arrange
 
             // Act
-            var outValue = ModelBindingHelper.ConvertTo(new object[] { input }, enumType);
+            var outValue = ModelBindingHelper.ConvertTo(new object[] { input }, enumType, culture: null);
 
             // Assert
             Assert.Equal(expected, outValue);
@@ -1022,10 +1021,10 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             // Arrange
 
             // Act
-            var outValue = ModelBindingHelper.ConvertTo(new object[] { "1" }, typeof(IntEnum));
+            var outValue = ModelBindingHelper.ConvertTo(new object[] { "1" }, typeof(IntEnum), culture: null);
 
             // Assert
-            Assert.Equal(outValue, IntEnum.Value1);
+            Assert.Equal(IntEnum.Value1, outValue);
         }
 
         [Fact]
@@ -1034,10 +1033,10 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             // Arrange
 
             // Act
-            var outValue = ModelBindingHelper.ConvertTo(new object[] { "Value1" }, typeof(IntEnum));
+            var outValue = ModelBindingHelper.ConvertTo(new object[] { "Value1" }, typeof(IntEnum), culture: null);
 
             // Assert
-            Assert.Equal(outValue, IntEnum.Value1);
+            Assert.Equal(IntEnum.Value1, outValue);
         }
 
         [Fact]
@@ -1046,7 +1045,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             // Arrange
 
             // Act
-            var outValue = ModelBindingHelper.ConvertTo("12", typeof(int?));
+            var outValue = ModelBindingHelper.ConvertTo("12", typeof(int?), culture: null);
 
             // Assert
             Assert.Equal(12, outValue);
@@ -1058,7 +1057,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             // Arrange
 
             // Act
-            var outValue = ModelBindingHelper.ConvertTo("12.5", typeof(double?));
+            var outValue = ModelBindingHelper.ConvertTo("12.5", typeof(double?), culture: null);
 
             // Assert
             Assert.Equal(12.5, outValue);
@@ -1070,7 +1069,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             // Arrange
 
             // Act
-            var outValue = ModelBindingHelper.ConvertTo(12M, typeof(int?));
+            var outValue = ModelBindingHelper.ConvertTo(12M, typeof(int?), culture: null);
 
             // Assert
             Assert.Equal(12, outValue);
@@ -1082,7 +1081,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             // Arrange
 
             // Act
-            var outValue = ModelBindingHelper.ConvertTo(12.5M, typeof(double?));
+            var outValue = ModelBindingHelper.ConvertTo(12.5M, typeof(double?), culture: null);
 
             // Assert
             Assert.Equal(12.5, outValue);
@@ -1094,7 +1093,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             // Arrange
 
             // Act
-            var outValue = ModelBindingHelper.ConvertTo(12M, typeof(int?));
+            var outValue = ModelBindingHelper.ConvertTo(12M, typeof(int?), culture: null);
 
             // Assert
             Assert.Equal(12, outValue);
@@ -1106,7 +1105,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             // Arrange
 
             // Act
-            var outValue = ModelBindingHelper.ConvertTo(12M, typeof(long?));
+            var outValue = ModelBindingHelper.ConvertTo(12M, typeof(long?), culture: null);
 
             // Assert
             Assert.Equal(12L, outValue);
@@ -1118,7 +1117,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             // Arrange
 
             // Act
-            var outValue = ModelBindingHelper.ConvertTo(new object[] { "some string" }, typeof(string));
+            var outValue = ModelBindingHelper.ConvertTo(new object[] { "some string" }, typeof(string), culture: null);
 
             // Assert
             Assert.Equal("some string", outValue);
@@ -1133,7 +1132,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             // Arrange
 
             // Act
-            var outValue = ModelBindingHelper.ConvertTo(value, typeof(IntEnum[]));
+            var outValue = ModelBindingHelper.ConvertTo(value, typeof(IntEnum[]), culture: null);
 
             // Assert
             var result = Assert.IsType<IntEnum[]>(outValue);
@@ -1151,7 +1150,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             // Arrange
 
             // Act
-            var outValue = ModelBindingHelper.ConvertTo(value, typeof(FlagsEnum[]));
+            var outValue = ModelBindingHelper.ConvertTo(value, typeof(FlagsEnum[]), culture: null);
 
             // Assert
             var result = Assert.IsType<FlagsEnum[]>(outValue);
@@ -1167,7 +1166,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             var original = new[] { "some string" };
 
             // Act
-            var outValue = ModelBindingHelper.ConvertTo(original, typeof(string[]));
+            var outValue = ModelBindingHelper.ConvertTo(original, typeof(string[]), culture: null);
 
             // Assert
             Assert.Same(original, outValue);
@@ -1183,7 +1182,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
 
             // Act & Assert
             var ex = Assert.Throws<FormatException>(
-                () => ModelBindingHelper.ConvertTo("this-is-not-a-valid-value", destinationType));
+                () => ModelBindingHelper.ConvertTo("this-is-not-a-valid-value", destinationType, culture: null));
         }
 
         [Fact]
@@ -1207,7 +1206,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             // Arrange
 
             // Act & Assert
-            Assert.Equal(expectedValue, ModelBindingHelper.ConvertTo(initialValue, typeof(T)));
+            Assert.Equal(expectedValue, ModelBindingHelper.ConvertTo(initialValue, typeof(T), culture: null));
         }
 
         public static IEnumerable<object[]> IntrinsicConversionData
@@ -1250,7 +1249,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
 
             // Act & Assert
             var ex = Assert.Throws<InvalidOperationException>(
-                () => ModelBindingHelper.ConvertTo(new MyClassWithoutConverter(), destinationType));
+                () => ModelBindingHelper.ConvertTo(new MyClassWithoutConverter(), destinationType, culture: null));
             Assert.Equal(expectedMessage, ex.Message);
         }
 
@@ -1266,7 +1265,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
 
             // Act & Assert
             var ex = Assert.Throws<InvalidOperationException>(
-                () => ModelBindingHelper.ConvertTo(value, destinationType));
+                () => ModelBindingHelper.ConvertTo(value, destinationType, culture: null));
             Assert.Equal(expectedMessage, ex.Message);
         }
 
@@ -1280,7 +1279,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             var value = new MySubClassWithoutConverter();
 
             // Act
-            var result = ModelBindingHelper.ConvertTo(value, destinationType);
+            var result = ModelBindingHelper.ConvertTo(value, destinationType, culture: null);
 
             // Assert
             Assert.Same(value, result);
@@ -1300,7 +1299,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             };
 
             // Act
-            var result = ModelBindingHelper.ConvertTo(value, destinationType);
+            var result = ModelBindingHelper.ConvertTo(value, destinationType, culture: null);
 
             // Assert
             Assert.IsType(destinationType, result);
@@ -1325,7 +1324,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             // Arrange
 
             // Act
-            var outValue = ModelBindingHelper.ConvertTo<FlagsEnum>(value);
+            var outValue = ModelBindingHelper.ConvertTo<FlagsEnum>(value, culture: null);
 
             // Assert
             Assert.Equal(expected, outValue);
@@ -1414,7 +1413,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
         [InlineData(nameof(ModelWithReadOnlyAndSpecialCaseProperties.ListProperty))]
         [InlineData(nameof(ModelWithReadOnlyAndSpecialCaseProperties.ScalarProperty))]
         [InlineData(nameof(ModelWithReadOnlyAndSpecialCaseProperties.ScalarPropertyWithValue))]
-        public void CanGetCompatibleCollection_ReturnsFalse_IfReadOnly(string propertyName)
+        public void CanGetCompatibleCollection_ReturnsTrue_IfReadOnly(string propertyName)
         {
             // Arrange
             var bindingContext = GetBindingContextForProperty(propertyName);
@@ -1423,7 +1422,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             var result = ModelBindingHelper.CanGetCompatibleCollection<int>(bindingContext);
 
             // Assert
-            Assert.False(result);
+            Assert.True(result);
         }
 
         [Theory]
@@ -1491,6 +1490,20 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
 
             // Assert
             Assert.False(result);
+        }
+
+        private static ActionContext GetActionContext()
+        {
+            var services = new ServiceCollection();
+            services.AddSingleton<ILoggerFactory>(NullLoggerFactory.Instance);
+
+            return new ActionContext()
+            {
+                HttpContext = new DefaultHttpContext()
+                {
+                    RequestServices = services.BuildServiceProvider()
+                }
+            };
         }
 
         private static DefaultModelBindingContext GetBindingContextForProperty(string propertyName)

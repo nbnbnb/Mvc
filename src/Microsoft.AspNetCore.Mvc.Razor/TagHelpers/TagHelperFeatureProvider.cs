@@ -1,36 +1,42 @@
-// Copyright (c) .NET Foundation. All rights reserved.
+﻿// Copyright (c) .NET Foundation. All rights reserved.
 // Licensed under the Apache License, Version 2.0. See License.txt in the project root for license information.
 
 using System.Collections.Generic;
-using System.Linq;
+using System.Reflection;
 using Microsoft.AspNetCore.Mvc.ApplicationParts;
-using Microsoft.AspNetCore.Razor.Runtime.TagHelpers;
+using Microsoft.AspNetCore.Razor.TagHelpers;
 
 namespace Microsoft.AspNetCore.Mvc.Razor.TagHelpers
 {
-    /// <summary>
-    /// Discovers tag helpers from a list of <see cref="ApplicationPart"/> instances.
-    /// </summary>
     public class TagHelperFeatureProvider : IApplicationFeatureProvider<TagHelperFeature>
     {
-        /// <inheritdoc />
         public void PopulateFeature(IEnumerable<ApplicationPart> parts, TagHelperFeature feature)
         {
-            foreach (var type in parts.OfType<IApplicationPartTypeProvider>())
+            foreach (var part in parts)
             {
-                ProcessPart(type, feature);
+                if (IncludePart(part) && part is IApplicationPartTypeProvider typeProvider)
+                {
+                    foreach (var type in typeProvider.Types)
+                    {
+                        var typeInfo = type.GetTypeInfo();
+                        if (IncludeType(typeInfo) && !feature.TagHelpers.Contains(typeInfo))
+                        {
+                            feature.TagHelpers.Add(typeInfo);
+                        }
+                    }
+                }
             }
         }
 
-        private static void ProcessPart(IApplicationPartTypeProvider part, TagHelperFeature feature)
+        protected virtual bool IncludePart(ApplicationPart part) => true;
+
+        protected virtual bool IncludeType(TypeInfo type)
         {
-            foreach (var type in part.Types)
-            {
-                if (TagHelperConventions.IsTagHelper(type) && !feature.TagHelpers.Contains(type))
-                {
-                    feature.TagHelpers.Add(type);
-                }
-            }
+            // We don't need to check visibility here, that's handled by the type provider.
+            return
+                typeof(ITagHelper).GetTypeInfo().IsAssignableFrom(type) &&
+                !type.IsAbstract &&
+                !type.IsGenericType;
         }
     }
 }

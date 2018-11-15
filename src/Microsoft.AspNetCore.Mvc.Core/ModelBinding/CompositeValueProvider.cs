@@ -4,7 +4,6 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.Linq;
 using System.Threading.Tasks;
 
 namespace Microsoft.AspNetCore.Mvc.ModelBinding
@@ -15,13 +14,13 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
     public class CompositeValueProvider :
         Collection<IValueProvider>,
         IEnumerableValueProvider,
-        IBindingSourceValueProvider
+        IBindingSourceValueProvider,
+        IKeyRewriterValueProvider
     {
         /// <summary>
         /// Initializes a new instance of <see cref="CompositeValueProvider"/>.
         /// </summary>
         public CompositeValueProvider()
-            : base()
         {
         }
 
@@ -52,7 +51,26 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             }
 
             var factories = controllerContext.ValueProviderFactories;
-            var valueProviderFactoryContext = new ValueProviderFactoryContext(controllerContext);
+
+            return await CreateAsync(controllerContext, factories);
+        }
+
+        /// <summary>
+        /// Asynchronously creates a <see cref="CompositeValueProvider"/> using the provided
+        /// <paramref name="actionContext"/>.
+        /// </summary>
+        /// <param name="actionContext">The <see cref="ActionContext"/> associated with the current request.</param>
+        /// <param name="factories">The <see cref="IValueProviderFactory"/> to be applied to the context.</param>
+        /// <returns>
+        /// A <see cref="Task{TResult}"/> which, when completed, asynchronously returns a
+        /// <see cref="CompositeValueProvider"/>.
+        /// </returns>
+        public static async Task<CompositeValueProvider> CreateAsync(
+            ActionContext actionContext,
+            IList<IValueProviderFactory> factories)
+        {
+            var valueProviderFactoryContext = new ValueProviderFactoryContext(actionContext);
+
             for (var i = 0; i < factories.Count; i++)
             {
                 var factory = factories[i];
@@ -99,8 +117,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
         {
             foreach (var valueProvider in this)
             {
-                var enumeratedProvider = valueProvider as IEnumerableValueProvider;
-                if (enumeratedProvider != null)
+                if (valueProvider is IEnumerableValueProvider enumeratedProvider)
                 {
                     var result = enumeratedProvider.GetKeysFromPrefix(prefix);
                     if (result != null && result.Count > 0)
@@ -142,13 +159,34 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
                 throw new ArgumentNullException(nameof(bindingSource));
             }
 
-            var filteredValueProviders = new List<IValueProvider>();
-            foreach (var valueProvider in this.OfType<IBindingSourceValueProvider>())
+            var shouldFilter = false;
+            for (var i = 0; i < Count; i++)
             {
-                var result = valueProvider.Filter(bindingSource);
-                if (result != null)
+                var valueProvider = Items[i];
+                if (valueProvider is IBindingSourceValueProvider)
                 {
-                    filteredValueProviders.Add(result);
+                    shouldFilter = true;
+                    break;
+                }
+            }
+
+            if (!shouldFilter)
+            {
+                // No inner IBindingSourceValueProvider implementations. Result will be empty.
+                return null;
+            }
+
+            var filteredValueProviders = new List<IValueProvider>();
+            for (var i = 0; i < Count; i++)
+            {
+                var valueProvider = Items[i];
+                if (valueProvider is IBindingSourceValueProvider bindingSourceValueProvider)
+                {
+                    var result = bindingSourceValueProvider.Filter(bindingSource);
+                    if (result != null)
+                    {
+                        filteredValueProviders.Add(result);
+                    }
                 }
             }
 
@@ -158,10 +196,56 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
                 return null;
             }
 
-            if (filteredValueProviders.Count == Count)
+            return new CompositeValueProvider(filteredValueProviders);
+        }
+
+        /// <inheritdoc />
+        /// <remarks>
+        /// Value providers are included by default. If a contained <see cref="IValueProvider"/> does not implement
+        /// <see cref="IKeyRewriterValueProvider"/>, <see cref="Filter()"/> will not remove it.
+        /// </remarks>
+        public IValueProvider Filter()
+        {
+            var shouldFilter = false;
+            for (var i = 0; i < Count; i++)
             {
-                // No need for a new CompositeValueProvider.
+                var valueProvider = Items[i];
+                if (valueProvider is IKeyRewriterValueProvider)
+                {
+                    shouldFilter = true;
+                    break;
+                }
+            }
+
+            if (!shouldFilter)
+            {
+                // No inner IKeyRewriterValueProvider implementations. Nothing to exclude.
                 return this;
+            }
+
+            var filteredValueProviders = new List<IValueProvider>();
+            for (var i = 0; i < Count; i++)
+            {
+                var valueProvider = Items[i];
+                if (valueProvider is IKeyRewriterValueProvider keyRewriterValueProvider)
+                {
+                    var result = keyRewriterValueProvider.Filter();
+                    if (result != null)
+                    {
+                        filteredValueProviders.Add(result);
+                    }
+                }
+                else
+                {
+                    // Assume value providers that aren't rewriter-aware do not rewrite their keys.
+                    filteredValueProviders.Add(valueProvider);
+                }
+            }
+
+            if (filteredValueProviders.Count == 0)
+            {
+                // Do not create an empty CompositeValueProvider.
+                return null;
             }
 
             return new CompositeValueProvider(filteredValueProviders);

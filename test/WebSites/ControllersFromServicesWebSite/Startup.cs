@@ -11,7 +11,7 @@ using ControllersFromServicesWebSite.Components;
 using ControllersFromServicesWebSite.TagHelpers;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ApplicationParts;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -36,11 +36,12 @@ namespace ControllersFromServicesWebSite
                 })
                 .AddControllersAsServices()
                 .AddViewComponentsAsServices()
-                .AddTagHelpersAsServices();
+                .AddTagHelpersAsServices()
+                .SetCompatibilityVersion(CompatibilityVersion.Latest);
 
             services.AddTransient<QueryValueService>();
             services.AddTransient<ValueService>();
-            services.AddSingleton<IHttpContextAccessor, HttpContextAccessor>();
+            services.AddHttpContextAccessor();
         }
 
         private class TypesPart : ApplicationPart, IApplicationPartTypeProvider
@@ -57,8 +58,6 @@ namespace ControllersFromServicesWebSite
 
         public void Configure(IApplicationBuilder app)
         {
-            app.UseCultureReplacer();
-
             app.UseMvc(routes =>
             {
                 routes.MapRoute("default", "{controller}/{action}/{id}");
@@ -67,15 +66,18 @@ namespace ControllersFromServicesWebSite
 
         public static void Main(string[] args)
         {
-            var host = new WebHostBuilder()
-                .UseContentRoot(Directory.GetCurrentDirectory())
-                .UseStartup<Startup>()
-                .UseKestrel()
-                .UseIISIntegration()
+            var host = CreateWebHostBuilder(args)
                 .Build();
 
             host.Run();
         }
+
+        public static IWebHostBuilder CreateWebHostBuilder(string[] args) =>
+            new WebHostBuilder()
+                .UseContentRoot(Directory.GetCurrentDirectory())
+                .UseStartup<Startup>()
+                .UseKestrel()
+                .UseIISIntegration();
     }
 }
 

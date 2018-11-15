@@ -3,15 +3,18 @@
 
 using System;
 using System.Collections.Generic;
+using System.Threading;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc.ApplicationParts;
 using Microsoft.AspNetCore.Mvc.Controllers;
-using Microsoft.AspNetCore.Mvc.Internal;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.AspNetCore.Mvc.ModelBinding.Validation;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.ObjectPool;
 using Microsoft.Extensions.Options;
 
@@ -22,17 +25,21 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
         public static ModelBindingTestContext GetTestContext(
             Action<HttpRequest> updateRequest = null,
             Action<MvcOptions> updateOptions = null,
-            ControllerActionDescriptor actionDescriptor = null)
+            ControllerActionDescriptor actionDescriptor = null,
+            IModelMetadataProvider metadataProvider = null,
+            MvcOptions mvcOptions = null)
         {
-            var httpContext = GetHttpContext(updateRequest, updateOptions);
+            var httpContext = GetHttpContext(metadataProvider, updateRequest, updateOptions, mvcOptions);
             var services = httpContext.RequestServices;
+            metadataProvider = metadataProvider ?? services.GetRequiredService<IModelMetadataProvider>();
             var options = services.GetRequiredService<IOptions<MvcOptions>>();
 
-            var context = new ModelBindingTestContext()
+            var context = new ModelBindingTestContext
             {
                 ActionDescriptor = actionDescriptor ?? new ControllerActionDescriptor(),
                 HttpContext = httpContext,
-                MetadataProvider = TestModelMetadataProvider.CreateDefaultProvider(),
+                MetadataProvider = metadataProvider,
+                MvcOptions = options.Value,
                 RouteData = new RouteData(),
                 ValueProviderFactories = new List<IValueProviderFactory>(options.Value.ValueProviderFactories),
             };
@@ -40,27 +47,49 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
             return context;
         }
 
-        public static DefaultControllerArgumentBinder GetArgumentBinder(
+        public static ParameterBinder GetParameterBinder(
             MvcOptions options = null,
             IModelBinderProvider binderProvider = null)
         {
             if (options == null)
             {
                 var metadataProvider = TestModelMetadataProvider.CreateDefaultProvider();
-                return GetArgumentBinder(metadataProvider, binderProvider);
+                return GetParameterBinder(metadataProvider, binderProvider);
             }
             else
             {
                 var metadataProvider = TestModelMetadataProvider.CreateProvider(options.ModelMetadataDetailsProviders);
-                return GetArgumentBinder(metadataProvider, binderProvider);
+                return GetParameterBinder(metadataProvider, binderProvider, options);
             }
         }
 
-        public static DefaultControllerArgumentBinder GetArgumentBinder(
-            IModelMetadataProvider metadataProvider, 
-            IModelBinderProvider binderProvider = null)
+        public static ParameterBinder GetParameterBinder(ModelBindingTestContext testContext)
         {
-            var services = GetServices();
+            return GetParameterBinder(testContext.HttpContext.RequestServices);
+        }
+
+        public static ParameterBinder GetParameterBinder(IServiceProvider serviceProvider)
+        {
+            var metadataProvider = serviceProvider.GetRequiredService<IModelMetadataProvider>();
+            var options = serviceProvider.GetRequiredService<IOptions<MvcOptions>>();
+
+            return new ParameterBinder(
+                metadataProvider,
+                new ModelBinderFactory(metadataProvider, options, serviceProvider),
+                new DefaultObjectValidator(
+                    metadataProvider,
+                    new[] { new CompositeModelValidatorProvider(GetModelValidatorProviders(options)) },
+                    options.Value),
+                options,
+                NullLoggerFactory.Instance);
+        }
+
+        public static ParameterBinder GetParameterBinder(
+            IModelMetadataProvider metadataProvider,
+            IModelBinderProvider binderProvider = null,
+            MvcOptions mvcOptions = null)
+        {
+            var services = GetServices(metadataProvider, mvcOptions: mvcOptions);
             var options = services.GetRequiredService<IOptions<MvcOptions>>();
 
             if (binderProvider != null)
@@ -68,52 +97,108 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
                 options.Value.ModelBinderProviders.Insert(0, binderProvider);
             }
 
-            return new DefaultControllerArgumentBinder(
+            return new ParameterBinder(
                 metadataProvider,
-                new ModelBinderFactory(metadataProvider, options),
-                GetObjectValidator(metadataProvider, options));
+                new ModelBinderFactory(metadataProvider, options, services),
+                new DefaultObjectValidator(
+                    metadataProvider,
+                    new[] { new CompositeModelValidatorProvider(GetModelValidatorProviders(options)) },
+                    options.Value),
+                options,
+                NullLoggerFactory.Instance);
+        }
+
+        public static IModelBinderFactory GetModelBinderFactory(
+            IModelMetadataProvider metadataProvider,
+            IServiceProvider services = null)
+        {
+            if (services == null)
+            {
+                services = GetServices(metadataProvider);
+            }
+
+            var options = services.GetRequiredService<IOptions<MvcOptions>>();
+
+            return new ModelBinderFactory(metadataProvider, options, services);
         }
 
         public static IObjectModelValidator GetObjectValidator(
             IModelMetadataProvider metadataProvider,
             IOptions<MvcOptions> options = null)
         {
-            IList<IModelValidatorProvider> validatorProviders;
+            return new DefaultObjectValidator(
+                metadataProvider,
+                GetModelValidatorProviders(options),
+                options?.Value ?? new MvcOptions { AllowShortCircuitingValidationWhenNoValidatorsArePresent = true });
+        }
+
+        private static IList<IModelValidatorProvider> GetModelValidatorProviders(IOptions<MvcOptions> options)
+        {
             if (options == null)
             {
-                validatorProviders = TestModelValidatorProvider.CreateDefaultProvider().ValidatorProviders;
+                return TestModelValidatorProvider.CreateDefaultProvider().ValidatorProviders;
             }
             else
             {
-                validatorProviders = options.Value.ModelValidatorProviders;
+                return options.Value.ModelValidatorProviders;
             }
-
-            return new DefaultObjectValidator(metadataProvider, validatorProviders);
         }
 
         private static HttpContext GetHttpContext(
+            IModelMetadataProvider metadataProvider,
             Action<HttpRequest> updateRequest = null,
-            Action<MvcOptions> updateOptions = null)
+            Action<MvcOptions> updateOptions = null,
+            MvcOptions mvcOptions = null)
         {
             var httpContext = new DefaultHttpContext();
+            httpContext.Features.Set<IHttpRequestLifetimeFeature>(new CancellableRequestLifetimeFeature());
 
-            if (updateRequest != null)
-            {
-                updateRequest(httpContext.Request);
-            }
+            updateRequest?.Invoke(httpContext.Request);
 
-            httpContext.RequestServices = GetServices(updateOptions);
+            httpContext.RequestServices = GetServices(metadataProvider, updateOptions, mvcOptions);
             return httpContext;
         }
 
-        private static IServiceProvider GetServices(Action<MvcOptions> updateOptions = null)
+        public static IServiceProvider GetServices(
+            IModelMetadataProvider metadataProvider,
+            Action<MvcOptions> updateOptions = null,
+            MvcOptions mvcOptions = null)
         {
             var serviceCollection = new ServiceCollection();
             serviceCollection.AddSingleton(new ApplicationPartManager());
-            serviceCollection.AddMvc();
+            if (metadataProvider != null)
+            {
+                serviceCollection.AddSingleton(metadataProvider);
+            }
+            else if (updateOptions != null || mvcOptions != null)
+            {
+                serviceCollection.AddSingleton(services =>
+                {
+                    var optionsAccessor = services.GetRequiredService<IOptions<MvcOptions>>();
+                    return TestModelMetadataProvider.CreateProvider(optionsAccessor.Value.ModelMetadataDetailsProviders);
+                });
+            }
+            else
+            {
+                serviceCollection.AddSingleton<IModelMetadataProvider>(services =>
+                {
+                    return TestModelMetadataProvider.CreateDefaultProvider();
+                });
+            }
+
+            if (mvcOptions != null)
+            {
+                serviceCollection.AddSingleton(Options.Create(mvcOptions));
+            }
+
+            serviceCollection
+                .AddMvc()
+                .SetCompatibilityVersion(CompatibilityVersion.Version_2_1);
             serviceCollection
                 .AddSingleton<ObjectPoolProvider, DefaultObjectPoolProvider>()
-                .AddTransient<ILoggerFactory, LoggerFactory>();
+                .AddSingleton<ILoggerFactory>(NullLoggerFactory.Instance)
+                .AddTransient<ILogger<DefaultAuthorizationService>, Logger<DefaultAuthorizationService>>()
+                .Configure<MvcOptions>(options => options.AllowShortCircuitingValidationWhenNoValidatorsArePresent = true);
 
             if (updateOptions != null)
             {
@@ -121,6 +206,18 @@ namespace Microsoft.AspNetCore.Mvc.IntegrationTests
             }
 
             return serviceCollection.BuildServiceProvider();
+        }
+
+        private class CancellableRequestLifetimeFeature : IHttpRequestLifetimeFeature
+        {
+            private readonly CancellationTokenSource _cts = new CancellationTokenSource();
+
+            public CancellationToken RequestAborted { get => _cts.Token; set => throw new NotImplementedException(); }
+
+            public void Abort()
+            {
+                _cts.Cancel();
+            }
         }
     }
 }

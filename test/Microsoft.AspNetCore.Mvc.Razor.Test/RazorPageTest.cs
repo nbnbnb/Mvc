@@ -14,10 +14,9 @@ using Microsoft.AspNetCore.Mvc.Abstractions;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.AspNetCore.Mvc.Rendering;
 using Microsoft.AspNetCore.Mvc.Routing;
-using Microsoft.AspNetCore.Mvc.TestCommon;
 using Microsoft.AspNetCore.Mvc.ViewEngines;
 using Microsoft.AspNetCore.Mvc.ViewFeatures;
-using Microsoft.AspNetCore.Mvc.ViewFeatures.Internal;
+using Microsoft.AspNetCore.Mvc.ViewFeatures.Buffers;
 using Microsoft.AspNetCore.Razor.Runtime.TagHelpers;
 using Microsoft.AspNetCore.Razor.TagHelpers;
 using Microsoft.AspNetCore.Routing;
@@ -31,7 +30,7 @@ namespace Microsoft.AspNetCore.Mvc.Razor
 {
     public class RazorPageTest
     {
-        private readonly RenderAsyncDelegate _nullRenderAsyncDelegate = writer => Task.FromResult(0);
+        private readonly RenderAsyncDelegate _nullRenderAsyncDelegate = () => Task.FromResult(0);
         private readonly Func<TextWriter, Task> NullAsyncWrite = writer => writer.WriteAsync(string.Empty);
 
         [Fact]
@@ -304,7 +303,7 @@ namespace Microsoft.AspNetCore.Mvc.Razor
 
                     Assert.Equal(1, bufferScope.CreatedBuffers.Count);
                     Assert.Equal(0, bufferScope.ReturnedBuffers.Count);
-                    v.Write("Level:1-A"); // Creates a new buffer for the taghelper.
+                    v.Write("Level:1-A"); // Creates a new buffer for the TagHelper.
                     Assert.Equal(2, bufferScope.CreatedBuffers.Count);
                     Assert.Equal(0, bufferScope.ReturnedBuffers.Count);
 
@@ -319,7 +318,7 @@ namespace Microsoft.AspNetCore.Mvc.Razor
 
                     Assert.Equal(2, bufferScope.CreatedBuffers.Count);
                     Assert.Equal(0, bufferScope.ReturnedBuffers.Count);
-                    v.Write(outputLevel1); // Writing the taghelper to output returns a buffer.
+                    v.Write(outputLevel1); // Writing the TagHelper to output returns a buffer.
                     Assert.Equal(2, bufferScope.CreatedBuffers.Count);
                     Assert.Equal(1, bufferScope.ReturnedBuffers.Count);
                 }
@@ -336,7 +335,7 @@ namespace Microsoft.AspNetCore.Mvc.Razor
 
                     Assert.Equal(2, bufferScope.CreatedBuffers.Count);
                     Assert.Equal(1, bufferScope.ReturnedBuffers.Count);
-                    v.Write("Level:1-B"); // Creates a new buffer for the taghelper.
+                    v.Write("Level:1-B"); // Creates a new buffer for the TagHelper.
                     Assert.Equal(3, bufferScope.CreatedBuffers.Count);
                     Assert.Equal(1, bufferScope.ReturnedBuffers.Count);
 
@@ -352,7 +351,7 @@ namespace Microsoft.AspNetCore.Mvc.Razor
 
                         Assert.Equal(3, bufferScope.CreatedBuffers.Count);
                         Assert.Equal(1, bufferScope.ReturnedBuffers.Count);
-                        v.Write("Level:2"); // Creates a new buffer for the taghelper.
+                        v.Write("Level:2"); // Creates a new buffer for the TagHelper.
                         Assert.Equal(4, bufferScope.CreatedBuffers.Count);
                         Assert.Equal(1, bufferScope.ReturnedBuffers.Count);
 
@@ -367,7 +366,7 @@ namespace Microsoft.AspNetCore.Mvc.Razor
 
                         Assert.Equal(4, bufferScope.CreatedBuffers.Count);
                         Assert.Equal(1, bufferScope.ReturnedBuffers.Count);
-                        v.Write(outputLevel2); // Writing the taghelper to output returns a buffer.
+                        v.Write(outputLevel2); // Writing the TagHelper to output returns a buffer.
                         Assert.Equal(4, bufferScope.CreatedBuffers.Count);
                         Assert.Equal(2, bufferScope.ReturnedBuffers.Count);
                     }
@@ -383,7 +382,7 @@ namespace Microsoft.AspNetCore.Mvc.Razor
 
                     Assert.Equal(4, bufferScope.CreatedBuffers.Count);
                     Assert.Equal(2, bufferScope.ReturnedBuffers.Count);
-                    v.Write(outputLevel1); // Writing the taghelper to output returns a buffer.
+                    v.Write(outputLevel1); // Writing the TagHelper to output returns a buffer.
                     Assert.Equal(4, bufferScope.CreatedBuffers.Count);
                     Assert.Equal(3, bufferScope.ReturnedBuffers.Count);
                 }
@@ -443,7 +442,7 @@ namespace Microsoft.AspNetCore.Mvc.Razor
             });
             page.PreviousSectionWriters = new Dictionary<string, RenderAsyncDelegate>
             {
-                { "bar", writer => writer.WriteAsync(expected) }
+                { "bar", () => page.Output.WriteAsync(expected) }
             };
 
             // Act
@@ -553,7 +552,7 @@ namespace Microsoft.AspNetCore.Mvc.Razor
             await page.ExecuteAsync();
 
             // Assert
-            Assert.Equal(false, actual);
+            Assert.False(actual);
         }
 
         [Fact]
@@ -577,7 +576,7 @@ namespace Microsoft.AspNetCore.Mvc.Razor
             await page.ExecuteAsync();
 
             // Assert
-            Assert.Equal(true, actual);
+            Assert.True(actual);
         }
 
         [Fact]
@@ -767,7 +766,7 @@ namespace Microsoft.AspNetCore.Mvc.Razor
             page.PreviousSectionWriters = new Dictionary<string, RenderAsyncDelegate>
             {
                 { "ignored", _nullRenderAsyncDelegate },
-                { "not-ignored-section", writer => writer.WriteAsync("not-ignored-section-content") }
+                { "not-ignored-section", () => page.Output.WriteAsync("not-ignored-section-content") }
             };
 
             // Act
@@ -826,16 +825,16 @@ namespace Microsoft.AspNetCore.Mvc.Razor
             page.PreviousSectionWriters = new Dictionary<string, RenderAsyncDelegate>
             {
                 {
-                    "footer", writer => writer.WriteLineAsync("Footer section")
+                    "footer", () => page.Output.WriteLineAsync("Footer section")
                 },
                 {
-                    "header", writer => writer.WriteLineAsync("Header section")
+                    "header", () => page.Output.WriteLineAsync("Header section")
                 },
                 {
-                    "async-header", writer => writer.WriteLineAsync("Async Header section")
+                    "async-header", () => page.Output.WriteLineAsync("Async Header section")
                 },
                 {
-                    "async-footer", writer => writer.WriteLineAsync("Async Footer section")
+                    "async-footer", () => page.Output.WriteLineAsync("Async Footer section")
                 },
             };
 
@@ -928,7 +927,7 @@ namespace Microsoft.AspNetCore.Mvc.Razor
             var page = CreatePage(p =>
             {
                 p.Layout = "bar";
-                p.DefineSection("test-section", async _ =>
+                p.DefineSection("test-section", async () =>
                 {
                     await p.FlushAsync();
                 });
@@ -940,7 +939,7 @@ namespace Microsoft.AspNetCore.Mvc.Razor
 
             // Assert (does not throw)
             var renderAsyncDelegate = page.SectionWriters["test-section"];
-            await renderAsyncDelegate(TextWriter.Null);
+            await renderAsyncDelegate();
         }
 
         [Fact]
@@ -1394,7 +1393,7 @@ namespace Microsoft.AspNetCore.Mvc.Razor
 
         [Theory]
         [MemberData(nameof(WriteAttributeData))]
-        public void WriteAttributeTo_WritesAsExpected(
+        public void WriteAttribute_UsesSpecifiedWriter_WritesAsExpected(
             Tuple<string, int, object, int, bool>[] attributeValues,
             string expectedOutput)
         {
@@ -1406,11 +1405,11 @@ namespace Microsoft.AspNetCore.Mvc.Razor
             var suffix = string.Empty;
 
             // Act
-            page.BeginWriteAttributeTo(writer, "someattr", prefix, 0, suffix, 0, attributeValues.Length);
+            page.PushWriter(writer);
+            page.BeginWriteAttribute("someattr", prefix, 0, suffix, 0, attributeValues.Length);
             foreach (var value in attributeValues)
             {
-                page.WriteAttributeValueTo(
-                    writer,
+                page.WriteAttributeValue(
                     value.Item1,
                     value.Item2,
                     value.Item3,
@@ -1418,10 +1417,102 @@ namespace Microsoft.AspNetCore.Mvc.Razor
                     value.Item3?.ToString().Length ?? 0,
                     value.Item5);
             }
-            page.EndWriteAttributeTo(writer);
+            page.EndWriteAttribute();
+            page.PopWriter();
 
             // Assert
             Assert.Equal(expectedOutput, writer.ToString());
+        }
+
+        [Fact]
+        public void PushWriter_SetsUnderlyingWriter()
+        {
+            // Arrange
+            var page = CreatePage(p => { });
+            var writer = new StringWriter();
+
+            // Act
+            page.PushWriter(writer);
+
+            // Assert
+            Assert.Same(writer, page.ViewContext.Writer);
+        }
+
+        [Fact]
+        public void PopWriter_ResetsUnderlyingWriter()
+        {
+            // Arrange
+            var page = CreatePage(p => { });
+            var defaultWriter = new StringWriter();
+            page.ViewContext.Writer = defaultWriter;
+
+            var writer = new StringWriter();
+
+            // Act 1
+            page.PushWriter(writer);
+
+            // Assert 1
+            Assert.Same(writer, page.ViewContext.Writer);
+
+            // Act 2
+            var poppedWriter = page.PopWriter();
+
+            // Assert 2
+            Assert.Same(defaultWriter, poppedWriter);
+            Assert.Same(defaultWriter, page.ViewContext.Writer);
+        }
+
+        [Fact]
+        public void WriteLiteral_NullValue_DoesNothing()
+        {
+            // Arrange
+            var page = CreatePage(p => { });
+            var defaultWriter = new StringWriter();
+            page.ViewContext.Writer = defaultWriter;
+
+            // Act
+            page.WriteLiteral((object)null);
+
+            // Assert - does not throw
+            Assert.Empty(defaultWriter.ToString());
+        }
+
+        [Fact]
+        public void WriteLiteral_BuffersResultToPushedWriter()
+        {
+            // Arrange
+            var page = CreatePage(p => { });
+            var defaultWriter = new StringWriter();
+            page.ViewContext.Writer = defaultWriter;
+
+            var bufferWriter = new StringWriter();
+
+            // Act
+            page.WriteLiteral("Not");
+            page.PushWriter(bufferWriter);
+            page.WriteLiteral("This should be buffered");
+            page.PopWriter();
+            page.WriteLiteral(" buffered");
+
+            // Assert
+            Assert.Equal("Not buffered", defaultWriter.ToString());
+            Assert.Equal("This should be buffered", bufferWriter.ToString());
+        }
+
+        [Fact]
+        public void Write_StringValue_UsesSpecifiedWriter_EncodesValue()
+        {
+            // Arrange
+            var page = CreatePage(p => { });
+            var bufferWriter = new StringWriter();
+
+            // Act
+            page.PushWriter(bufferWriter);
+            page.Write("This should be encoded");
+            page.PopWriter();
+
+            // Assert
+            Assert.Equal("HtmlEncode[[This should be encoded]]", bufferWriter.ToString());
         }
 
         [Fact]
@@ -1501,7 +1592,7 @@ namespace Microsoft.AspNetCore.Mvc.Razor
             return new ViewContext(
                 actionContext,
                 viewMock.Object,
-                new ViewDataDictionary(new EmptyModelMetadataProvider()),
+                new ViewDataDictionary(new EmptyModelMetadataProvider(), new ModelStateDictionary()),
                 Mock.Of<ITempDataDictionary>(),
                 writer,
                 new HtmlHelperOptions());

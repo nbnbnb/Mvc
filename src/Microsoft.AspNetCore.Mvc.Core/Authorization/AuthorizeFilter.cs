@@ -3,13 +3,16 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
-using System.Security.Claims;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization.Policy;
+using Microsoft.AspNetCore.Mvc.ApplicationModels;
+using Microsoft.AspNetCore.Mvc.Core;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Internal;
+using Microsoft.Extensions.Options;
 
 namespace Microsoft.AspNetCore.Mvc.Authorization
 {
@@ -18,8 +21,19 @@ namespace Microsoft.AspNetCore.Mvc.Authorization
     /// <see cref="AuthorizationPolicy"/>. MVC recognizes the <see cref="AuthorizeAttribute"/> and adds an instance of
     /// this filter to the associated action or controller.
     /// </summary>
-    public class AuthorizeFilter : IAsyncAuthorizationFilter
+    public class AuthorizeFilter : IAsyncAuthorizationFilter, IFilterFactory
     {
+        private MvcOptions _mvcOptions;
+        private AuthorizationPolicy _effectivePolicy;
+
+        /// <summary>
+        /// Initializes a new <see cref="AuthorizeFilter"/> instance.
+        /// </summary>
+        public AuthorizeFilter()
+            : this(authorizeData: new[] { new AuthorizeAttribute() })
+        {
+        }
+
         /// <summary>
         /// Initialize a new <see cref="AuthorizeFilter"/> instance.
         /// </summary>
@@ -30,6 +44,7 @@ namespace Microsoft.AspNetCore.Mvc.Authorization
             {
                 throw new ArgumentNullException(nameof(policy));
             }
+
             Policy = policy;
         }
 
@@ -39,18 +54,37 @@ namespace Microsoft.AspNetCore.Mvc.Authorization
         /// <param name="policyProvider">The <see cref="IAuthorizationPolicyProvider"/> to use to resolve policy names.</param>
         /// <param name="authorizeData">The <see cref="IAuthorizeData"/> to combine into an <see cref="IAuthorizeData"/>.</param>
         public AuthorizeFilter(IAuthorizationPolicyProvider policyProvider, IEnumerable<IAuthorizeData> authorizeData)
+            : this(authorizeData)
         {
             if (policyProvider == null)
             {
                 throw new ArgumentNullException(nameof(policyProvider));
             }
+
+            PolicyProvider = policyProvider;
+        }
+
+        /// <summary>
+        /// Initializes a new instance of <see cref="AuthorizeFilter"/>.
+        /// </summary>
+        /// <param name="authorizeData">The <see cref="IAuthorizeData"/> to combine into an <see cref="IAuthorizeData"/>.</param>
+        public AuthorizeFilter(IEnumerable<IAuthorizeData> authorizeData)
+        {
             if (authorizeData == null)
             {
                 throw new ArgumentNullException(nameof(authorizeData));
             }
 
-            PolicyProvider = policyProvider;
             AuthorizeData = authorizeData;
+        }
+
+        /// <summary>
+        /// Initializes a new instance of <see cref="AuthorizeFilter"/>.
+        /// </summary>
+        /// <param name="policy">The name of the policy to require for authorization.</param>
+        public AuthorizeFilter(string policy)
+            : this(new[] { new AuthorizeAttribute(policy) })
+        {
         }
 
         /// <summary>
@@ -64,10 +98,84 @@ namespace Microsoft.AspNetCore.Mvc.Authorization
         public IEnumerable<IAuthorizeData> AuthorizeData { get; }
 
         /// <summary>
-        /// Gets the authorization policy to be used.  If null, the policy will be constructed via
-        /// AuthorizePolicy.CombineAsync(PolicyProvider, AuthorizeData)
+        /// Gets the authorization policy to be used.
         /// </summary>
-        public AuthorizationPolicy Policy { get; private set; }
+        /// <remarks>
+        /// If<c>null</c>, the policy will be constructed using
+        /// <see cref="AuthorizationPolicy.CombineAsync(IAuthorizationPolicyProvider, IEnumerable{IAuthorizeData})"/>.
+        /// </remarks>
+        public AuthorizationPolicy Policy { get; }
+
+        bool IFilterFactory.IsReusable => true;
+
+        // Computes the actual policy for this filter using either Policy or PolicyProvider + AuthorizeData
+        private Task<AuthorizationPolicy> ComputePolicyAsync()
+        {
+            if (Policy != null)
+            {
+                return Task.FromResult(Policy);
+            }
+            if (PolicyProvider == null)
+            {
+                throw new InvalidOperationException(
+                    Resources.FormatAuthorizeFilter_AuthorizationPolicyCannotBeCreated(
+                        nameof(AuthorizationPolicy),
+                        nameof(IAuthorizationPolicyProvider)));
+            }
+
+            return AuthorizationPolicy.CombineAsync(PolicyProvider, AuthorizeData);
+        }
+
+        private async Task<AuthorizationPolicy> GetEffectivePolicyAsync(AuthorizationFilterContext context)
+        {
+            if (_effectivePolicy != null)
+            {
+                return _effectivePolicy;
+            }
+
+            var effectivePolicy = await ComputePolicyAsync();
+            var canCache = PolicyProvider == null;
+
+            if (_mvcOptions == null) 
+            {
+                _mvcOptions = context.HttpContext.RequestServices.GetRequiredService<IOptions<MvcOptions>>().Value;
+            }
+
+            if (_mvcOptions.AllowCombiningAuthorizeFilters)
+            {
+                if (!context.IsEffectivePolicy(this))
+                {
+                    return null;
+                }
+
+                // Combine all authorize filters into single effective policy that's only run on the closest filter
+                var builder = new AuthorizationPolicyBuilder(effectivePolicy);
+                for (var i = 0; i < context.Filters.Count; i++)
+                {
+                    if (ReferenceEquals(this, context.Filters[i]))
+                    {
+                        continue;
+                    }
+                    
+                    if (context.Filters[i] is AuthorizeFilter authorizeFilter)
+                    {
+                        // Combine using the explicit policy, or the dynamic policy provider
+                        builder.Combine(await authorizeFilter.ComputePolicyAsync());
+                        canCache = canCache && authorizeFilter.PolicyProvider == null;
+                    }
+                }
+
+                effectivePolicy = builder?.Build() ?? effectivePolicy;
+            }
+
+            // We can cache the effective policy when there is no custom policy provider
+            if (canCache)
+            {
+                _effectivePolicy = effectivePolicy;
+            }
+
+            return effectivePolicy;
+        }
 
         /// <inheritdoc />
         public virtual async Task OnAuthorizationAsync(AuthorizationFilterContext context)
@@ -77,46 +185,58 @@ namespace Microsoft.AspNetCore.Mvc.Authorization
                 throw new ArgumentNullException(nameof(context));
             }
 
-            var effectivePolicy = Policy ?? await AuthorizationPolicy.CombineAsync(PolicyProvider, AuthorizeData);
+            var effectivePolicy = await GetEffectivePolicyAsync(context);
             if (effectivePolicy == null)
             {
                 return;
             }
 
-            // Build a ClaimsPrincipal with the Policy's required authentication types
-            if (effectivePolicy.AuthenticationSchemes != null && effectivePolicy.AuthenticationSchemes.Any())
-            {
-                ClaimsPrincipal newPrincipal = null;
-                foreach (var scheme in effectivePolicy.AuthenticationSchemes)
-                {
-                    var result = await context.HttpContext.Authentication.AuthenticateAsync(scheme);
-                    if (result != null)
-                    {
-                        newPrincipal = SecurityHelper.MergeUserPrincipal(newPrincipal, result);
-                    }
-                }
-                // If all schemes failed authentication, provide a default identity anyways
-                if (newPrincipal == null)
-                {
-                    newPrincipal = new ClaimsPrincipal(new ClaimsIdentity());
-                }
-                context.HttpContext.User = newPrincipal;
-            }
+            var policyEvaluator = context.HttpContext.RequestServices.GetRequiredService<IPolicyEvaluator>();
+
+            var authenticateResult = await policyEvaluator.AuthenticateAsync(effectivePolicy, context.HttpContext);
 
             // Allow Anonymous skips all authorization
-            if (context.Filters.Any(item => item is IAllowAnonymousFilter))
+            if (HasAllowAnonymous(context.Filters))
             {
                 return;
             }
 
-            var httpContext = context.HttpContext;
-            var authService = httpContext.RequestServices.GetRequiredService<IAuthorizationService>();
+            var authorizeResult = await policyEvaluator.AuthorizeAsync(effectivePolicy, authenticateResult, context.HttpContext, context);
 
-            // Note: Default Anonymous User is new ClaimsPrincipal(new ClaimsIdentity())
-            if (!await authService.AuthorizeAsync(httpContext.User, context, effectivePolicy))
+            if (authorizeResult.Challenged)
             {
                 context.Result = new ChallengeResult(effectivePolicy.AuthenticationSchemes.ToArray());
             }
+            else if (authorizeResult.Forbidden)
+            {
+                context.Result = new ForbidResult(effectivePolicy.AuthenticationSchemes.ToArray());
+            }
+        }
+
+        IFilterMetadata IFilterFactory.CreateInstance(IServiceProvider serviceProvider)
+        {
+            if (Policy != null || PolicyProvider != null)
+            {
+                // The filter is fully constructed. Use the current instance to authorize.
+                return this;
+            }
+
+            Debug.Assert(AuthorizeData != null);
+            var policyProvider = serviceProvider.GetRequiredService<IAuthorizationPolicyProvider>();
+            return AuthorizationApplicationModelProvider.GetFilter(policyProvider, AuthorizeData);
+        }
+
+        private static bool HasAllowAnonymous(IList<IFilterMetadata> filters)
+        {
+            for (var i = 0; i < filters.Count; i++)
+            {
+                if (filters[i] is IAllowAnonymousFilter)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
     }
 }

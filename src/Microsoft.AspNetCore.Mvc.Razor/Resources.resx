@@ -126,23 +126,11 @@
   <data name="FlushPointCannotBeInvoked" xml:space="preserve">
     <value>'{0}' cannot be invoked when a Layout page is set to be executed.</value>
   </data>
-  <data name="Instrumentation_WriterMustBeBufferedTextWriter" xml:space="preserve">
-    <value>The {0} returned by '{1}' must be an instance of '{2}'.</value>
-  </data>
   <data name="LayoutCannotBeLocated" xml:space="preserve">
     <value>The layout view '{0}' could not be located. The following locations were searched:{1}</value>
   </data>
   <data name="LayoutCannotBeRendered" xml:space="preserve">
     <value>Layout page '{0}' cannot be rendered after '{1}' has been invoked.</value>
-  </data>
-  <data name="MvcRazorCodeParser_CannotHaveModelAndInheritsKeyword" xml:space="preserve">
-    <value>The 'inherits' keyword is not allowed when a '{0}' keyword is used.</value>
-  </data>
-  <data name="MvcRazorCodeParser_ModelKeywordMustBeFollowedByTypeName" xml:space="preserve">
-    <value>The '{0}' keyword must be followed by a type name on the same line.</value>
-  </data>
-  <data name="MvcRazorCodeParser_OnlyOneModelStatementIsAllowed" xml:space="preserve">
-    <value>Only one '{0}' statement is allowed in a file.</value>
   </data>
   <data name="RazorPage_ThereIsNoActiveWritingScopeToEnd" xml:space="preserve">
     <value>There is no active writing scope to end.</value>
@@ -168,23 +156,8 @@
   <data name="SectionsNotRendered" xml:space="preserve">
     <value>The following sections have been defined but have not been rendered by the page at '{0}': '{1}'. To ignore an unrendered section call {2}("sectionName").</value>
   </data>
-  <data name="ViewCannotBeActivated" xml:space="preserve">
-    <value>View of type '{0}' cannot be activated by '{1}'.</value>
-  </data>
   <data name="ViewContextMustBeSet" xml:space="preserve">
     <value>'{0} must be set to access '{1}'.</value>
-  </data>
-  <data name="ViewLocationCache_KeyMustBeString" xml:space="preserve">
-    <value>'{0}' must be a {1} that is generated as result of the call to '{2}'.</value>
-  </data>
-  <data name="ViewMustBeContextualized" xml:space="preserve">
-    <value>The '{0}' method must be called before '{1}' can be invoked.</value>
-  </data>
-  <data name="RazorHash_UnsupportedHashAlgorithm" xml:space="preserve">
-    <value>Unsupported hash algorithm.</value>
-  </data>
-  <data name="RazorFileInfoCollection_ResourceCouldNotBeFound" xml:space="preserve">
-    <value>The resource '{0}' specified by '{1}' could not be found.</value>
   </data>
   <data name="GeneratedCodeFileName" xml:space="preserve">
     <value>Generated Code</value>
@@ -200,13 +173,31 @@
   <data name="LayoutHasCircularReference" xml:space="preserve">
     <value>A circular layout reference was detected when rendering '{0}'. The layout page '{1}' has already been rendered.</value>
   </data>
-  <data name="Compilation_DependencyContextIsNotSpecified" xml:space="preserve">
-    <value>The Razor page '{0}' failed to compile. Ensure that your application's {1} sets the '{2}' compilation property.</value>
+  <data name="Compilation_MissingReferences" xml:space="preserve">
+    <value>One or more compilation references may be missing. If you're seeing this in a published application, set '{0}' to true in your project file to ensure files in the refs directory are published.</value>
   </data>
   <data name="ViewLocationFormatsIsRequired" xml:space="preserve">
     <value>'{0}' cannot be empty. These locations are required to locate a view for rendering.</value>
   </data>
   <data name="RazorPage_NestingAttributeWritingScopesNotSupported" xml:space="preserve">
     <value>Nesting of TagHelper attribute writing scopes is not supported.</value>
+  </data>
+  <data name="FileProvidersAreRequired" xml:space="preserve">
+    <value>'{0}.{1}' must not be empty. At least one '{2}' is required to locate a view for rendering.</value>
+  </data>
+  <data name="RazorProject_PathMustStartWithForwardSlash" xml:space="preserve">
+    <value>Path must begin with a forward slash '/'.</value>
+  </data>
+  <data name="PropertyMustBeSet" xml:space="preserve">
+    <value>The property '{0}' of '{1}' must not be null.</value>
+  </data>
+  <data name="RazorViewCompiler_ViewPathsDifferOnlyInCase" xml:space="preserve">
+    <value>The following precompiled view paths differ only in case, which is not supported:</value>
+  </data>
+  <data name="UnsupportedDebugInformationFormat" xml:space="preserve">
+    <value>The debug type specified in the dependency context could be parsed. The debug type value '{0}' is not supported.</value>
+  </data>
+  <data name="CompiledViewDescriptor_NoData" xml:space="preserve">
+    <value>At least one of the '{0}' or '{1}' values must be non-null.</value>
   </data>
 </root>

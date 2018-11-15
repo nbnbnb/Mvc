@@ -6,7 +6,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Encodings.Web;
-using Microsoft.AspNetCore.Html;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Routing;
 using Microsoft.AspNetCore.Mvc.ViewFeatures;
@@ -590,7 +589,7 @@ namespace Microsoft.AspNetCore.Mvc.Rendering
             // Act & Assert
             using (var form = htmlHelper.BeginForm(FormMethod.Post, antiforgery: false, htmlAttributes: null))
             {
-                // This call will ouput a token.
+                // This call will output a token.
                 Assert.Equal("antiforgery", Assert.IsType<TagBuilder>(htmlHelper.AntiForgeryToken()).TagName);
             }
 

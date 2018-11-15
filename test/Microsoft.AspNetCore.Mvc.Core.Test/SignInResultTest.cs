@@ -4,14 +4,13 @@
 using System;
 using System.Security.Claims;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Http.Authentication;
 using Microsoft.AspNetCore.Mvc.Abstractions;
-using Microsoft.AspNetCore.Mvc.Internal;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Testing;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
 
@@ -24,14 +23,13 @@ namespace Microsoft.AspNetCore.Mvc
         {
             // Arrange
             var principal = new ClaimsPrincipal();
-            var authenticationManager = new Mock<AuthenticationManager>();
-            authenticationManager
-                .Setup(c => c.SignInAsync("", principal, null))
-                .Returns(TaskCache.CompletedTask)
-                .Verifiable();
             var httpContext = new Mock<HttpContext>();
-            httpContext.Setup(c => c.RequestServices).Returns(CreateServices());
-            httpContext.Setup(c => c.Authentication).Returns(authenticationManager.Object);
+            var auth = new Mock<IAuthenticationService>();
+            auth
+                .Setup(c => c.SignInAsync(httpContext.Object, "", principal, null))
+                .Returns(Task.CompletedTask)
+                .Verifiable();
+            httpContext.Setup(c => c.RequestServices).Returns(CreateServices(auth.Object));
             var result = new SignInResult("", principal, null);
             var routeData = new RouteData();
 
@@ -44,7 +42,7 @@ namespace Microsoft.AspNetCore.Mvc
             await result.ExecuteResultAsync(actionContext);
 
             // Assert
-            authenticationManager.Verify();
+            auth.Verify();
         }
 
         [Fact]
@@ -53,14 +51,13 @@ namespace Microsoft.AspNetCore.Mvc
             // Arrange
             var principal = new ClaimsPrincipal();
             var authProperties = new AuthenticationProperties();
-            var authenticationManager = new Mock<AuthenticationManager>();
-            authenticationManager
-                .Setup(c => c.SignInAsync("Scheme1", principal, authProperties))
-                .Returns(TaskCache.CompletedTask)
-                .Verifiable();
             var httpContext = new Mock<HttpContext>();
-            httpContext.Setup(c => c.RequestServices).Returns(CreateServices());
-            httpContext.Setup(c => c.Authentication).Returns(authenticationManager.Object);
+            var auth = new Mock<IAuthenticationService>();
+            auth
+                .Setup(c => c.SignInAsync(httpContext.Object, "Scheme1", principal, authProperties))
+                .Returns(Task.CompletedTask)
+                .Verifiable();
+            httpContext.Setup(c => c.RequestServices).Returns(CreateServices(auth.Object));
             var result = new SignInResult("Scheme1", principal, authProperties);
             var routeData = new RouteData();
 
@@ -73,13 +70,14 @@ namespace Microsoft.AspNetCore.Mvc
             await result.ExecuteResultAsync(actionContext);
 
             // Assert
-            authenticationManager.Verify();
+            auth.Verify();
         }
 
-        private static IServiceProvider CreateServices()
+        private static IServiceProvider CreateServices(IAuthenticationService auth)
         {
             return new ServiceCollection()
                 .AddSingleton<ILoggerFactory>(NullLoggerFactory.Instance)
+                .AddSingleton(auth)
                 .BuildServiceProvider();
         }
     }

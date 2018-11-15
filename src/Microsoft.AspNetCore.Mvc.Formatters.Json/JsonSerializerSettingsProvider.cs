@@ -13,6 +13,15 @@ namespace Microsoft.AspNetCore.Mvc.Formatters
     {
         private const int DefaultMaxDepth = 32;
 
+        // return shared resolver by default for perf so slow reflection logic is cached once
+        // developers can set their own resolver after the settings are returned if desired
+        private static readonly DefaultContractResolver SharedContractResolver;
+
+        static JsonSerializerSettingsProvider()
+        {
+            SharedContractResolver = CreateContractResolver();
+        }
+
         /// <summary>
         /// Creates default <see cref="JsonSerializerSettings"/>.
         /// </summary>
@@ -21,10 +30,7 @@ namespace Microsoft.AspNetCore.Mvc.Formatters
         {
             return new JsonSerializerSettings
             {
-                ContractResolver = new DefaultContractResolver
-                {
-                    NamingStrategy = new CamelCaseNamingStrategy(),
-                },
+                ContractResolver = SharedContractResolver,
 
                 MissingMemberHandling = MissingMemberHandling.Ignore,
 
@@ -35,6 +41,15 @@ namespace Microsoft.AspNetCore.Mvc.Formatters
                 // Do not change this setting
                 // Setting this to None prevents Json.NET from loading malicious, unsafe, or security-sensitive types
                 TypeNameHandling = TypeNameHandling.None,
+            };
+        }
+
+        // To enable unit testing
+        internal static DefaultContractResolver CreateContractResolver()
+        {
+            return new DefaultContractResolver
+            {
+                NamingStrategy = new CamelCaseNamingStrategy(),
             };
         }
     }

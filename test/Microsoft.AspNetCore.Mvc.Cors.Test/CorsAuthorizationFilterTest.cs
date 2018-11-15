@@ -12,7 +12,7 @@ using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Testing;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
 
@@ -20,8 +20,11 @@ namespace Microsoft.AspNetCore.Mvc.Cors
 {
     public class CorsAuthorizationFilterTest
     {
-        [Fact]
-        public async Task PreFlightRequest_SuccessfulMatch_WritesHeaders()
+        [Theory]
+        [InlineData("options")]
+        [InlineData("Options")]
+        [InlineData("OPTIONS")]
+        public async Task CaseInsensitive_PreFlightRequest_SuccessfulMatch_WritesHeaders(string preflightRequestMethod)
         {
             // Arrange
             var mockEngine = GetPassingEngine(supportsCredentials:true);
@@ -31,6 +34,7 @@ namespace Microsoft.AspNetCore.Mvc.Cors
                 new[] { new FilterDescriptor(filter, FilterScope.Action) },
                 GetRequestHeaders(true),
                 isPreflight: true);
+            authorizationContext.HttpContext.Request.Method = preflightRequestMethod;
 
             // Act
             await filter.OnAuthorizationAsync(authorizationContext);
@@ -120,7 +124,7 @@ namespace Microsoft.AspNetCore.Mvc.Cors
                 .Setup(o => o.GetPolicyAsync(It.IsAny<HttpContext>(), It.IsAny<string>()))
                 .Returns(Task.FromResult(new CorsPolicy()));
 
-            return new CorsAuthorizationFilter(corsService, policyProvider.Object)
+            return new CorsAuthorizationFilter(corsService, policyProvider.Object, Mock.Of<ILoggerFactory>())
             {
                 PolicyName = string.Empty
             };

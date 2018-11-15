@@ -7,12 +7,12 @@ using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
 using Microsoft.AspNetCore.Mvc.Filters;
-using Microsoft.AspNetCore.Mvc.Routing;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Internal;
 
 namespace Microsoft.AspNetCore.Mvc.ApplicationModels
 {
-    [DebuggerDisplay("Name={ControllerName}, Type={ControllerType.Name}")]
+    [DebuggerDisplay("{DisplayName}")]
     public class ControllerModel : ICommonModel, IFilterModel, IApiExplorerModel
     {
         public ControllerModel(
@@ -61,10 +61,10 @@ namespace Microsoft.AspNetCore.Mvc.ApplicationModels
             Properties = new Dictionary<object, object>(other.Properties);
 
             // Make a deep copy of other 'model' types.
-            Actions = new List<ActionModel>(other.Actions.Select(a => new ActionModel(a)));
+            Actions = new List<ActionModel>(other.Actions.Select(a => new ActionModel(a) { Controller = this }));
             ApiExplorer = new ApiExplorerModel(other.ApiExplorer);
             ControllerProperties =
-                new List<PropertyModel>(other.ControllerProperties.Select(p => new PropertyModel(p)));
+                new List<PropertyModel>(other.ControllerProperties.Select(p => new PropertyModel(p) { Controller = this }));
             Selectors = new List<SelectorModel>(other.Selectors.Select(s => new SelectorModel(s)));
         }
 
@@ -119,5 +119,15 @@ namespace Microsoft.AspNetCore.Mvc.ApplicationModels
         public IDictionary<object, object> Properties { get; }
 
         public IList<SelectorModel> Selectors { get; }
+
+        public string DisplayName
+        {
+            get
+            {
+                var controllerType = TypeNameHelper.GetTypeDisplayName(ControllerType);
+                var controllerAssembly = ControllerType.Assembly.GetName().Name;
+                return $"{controllerType} ({controllerAssembly})";
+            }
+        }
     }
 }

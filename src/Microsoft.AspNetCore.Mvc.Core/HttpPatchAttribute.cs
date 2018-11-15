@@ -8,11 +8,11 @@ using Microsoft.AspNetCore.Mvc.Routing;
 namespace Microsoft.AspNetCore.Mvc
 {
     /// <summary>
-    /// Identifies an action that only supports the HTTP PATCH method.
+    /// Identifies an action that supports the HTTP PATCH method.
     /// </summary>
     public class HttpPatchAttribute : HttpMethodAttribute
     {
-        private static readonly IEnumerable<string> _supportedMethods = new string[] { "PATCH" };
+        private static readonly IEnumerable<string> _supportedMethods = new [] { "PATCH" };
 
         /// <summary>
         /// Creates a new <see cref="HttpPatchAttribute"/>.

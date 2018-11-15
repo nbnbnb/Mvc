@@ -4,9 +4,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-#if NETSTANDARD1_6
-using System.Reflection;
-#endif
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 
 namespace Microsoft.AspNetCore.Mvc
@@ -22,7 +19,7 @@ namespace Microsoft.AspNetCore.Mvc
         private Func<ModelMetadata, bool> _propertyFilter;
 
         /// <summary>
-        /// Creates a new instace of <see cref="BindAttribute"/>.
+        /// Creates a new instance of <see cref="BindAttribute"/>.
         /// </summary>
         /// <param name="include">Names of parameters to include in binding.</param>
         public BindAttribute(params string[] include)
@@ -50,13 +47,7 @@ namespace Microsoft.AspNetCore.Mvc
         /// <summary>
         /// Represents the model name used during model binding.
         /// </summary>
-        string IModelNameProvider.Name
-        {
-            get
-            {
-                return Prefix;
-            }
-        }
+        string IModelNameProvider.Name => Prefix;
 
         /// <inheritdoc />
         public Func<ModelMetadata, bool> PropertyFilter
@@ -83,7 +74,7 @@ namespace Microsoft.AspNetCore.Mvc
         {
             if (string.IsNullOrEmpty(original))
             {
-                return new string[0];
+                return Array.Empty<string>();
             }
 
             var split = original.Split(',').Select(piece => piece.Trim()).Where(piece => !string.IsNullOrEmpty(piece));

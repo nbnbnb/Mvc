@@ -36,6 +36,14 @@ namespace Microsoft.AspNetCore.Mvc.Abstractions
         /// </summary>
         public IList<IActionConstraintMetadata> ActionConstraints { get; set; }
 
+        /// <summary>
+        /// Gets or sets the endpoint metadata for this action.
+        /// </summary>
+        public IList<object> EndpointMetadata { get; set; }
+
+        /// <summary>
+        /// The set of parameters associated with this action.
+        /// </summary>
         public IList<ParameterDescriptor> Parameters { get; set; }
 
         /// <summary>
@@ -43,6 +51,9 @@ namespace Microsoft.AspNetCore.Mvc.Abstractions
         /// </summary>
         public IList<ParameterDescriptor> BoundProperties { get; set; }
 
+        /// <summary>
+        /// The set of filters associated with this action.
+        /// </summary>
         public IList<FilterDescriptor> FilterDescriptors { get; set; }
 
         /// <summary>

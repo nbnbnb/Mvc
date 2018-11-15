@@ -5,7 +5,6 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc.Internal;
 
 namespace Microsoft.AspNetCore.Mvc.ModelBinding
 {
@@ -15,8 +14,8 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
     public class FormValueProvider : BindingSourceValueProvider, IEnumerableValueProvider
     {
         private readonly CultureInfo _culture;
+        private readonly IFormCollection _values;
         private PrefixContainer _prefixContainer;
-        private IFormCollection _values;
 
         /// <summary>
         /// Creates a value provider for <see cref="IFormCollection"/>.
@@ -44,13 +43,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             _culture = culture;
         }
 
-        public CultureInfo Culture
-        {
-            get
-            {
-                return _culture;
-            }
-        }
+        public CultureInfo Culture => _culture;
 
         protected PrefixContainer PrefixContainer
         {

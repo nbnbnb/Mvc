@@ -3,7 +3,11 @@
 
 using System;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc.Core;
+using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Microsoft.AspNetCore.Mvc.Routing
 {
@@ -15,6 +19,11 @@ namespace Microsoft.AspNetCore.Mvc.Routing
         /// <inheritdoc />
         public IUrlHelper GetUrlHelper(ActionContext context)
         {
+            if (context == null)
+            {
+                throw new ArgumentNullException(Resources.ArgumentCannotBeNullOrEmpty, (nameof(context)));
+            }
+
             var httpContext = context.HttpContext;
 
             if (httpContext == null)
@@ -32,12 +41,30 @@ namespace Microsoft.AspNetCore.Mvc.Routing
             }
 
             // Perf: Create only one UrlHelper per context
-            var urlHelper = httpContext.Items[typeof(IUrlHelper)] as IUrlHelper;
-            if (urlHelper == null)
+            if (httpContext.Items.TryGetValue(typeof(IUrlHelper), out var value) && value is IUrlHelper)
+            {
+                return (IUrlHelper)value;
+            }
+
+            IUrlHelper urlHelper;
+            var endpointFeature = httpContext.Features.Get<IEndpointFeature>();
+            if (endpointFeature?.Endpoint != null)
+            {
+                var services = httpContext.RequestServices;
+                var linkGenerator = services.GetRequiredService<LinkGenerator>();
+                var logger = services.GetRequiredService<ILogger<EndpointRoutingUrlHelper>>();
+
+                urlHelper = new EndpointRoutingUrlHelper(
+                    context,
+                    linkGenerator,
+                    logger);
+            }
+            else
             {
                 urlHelper = new UrlHelper(context);
-                httpContext.Items[typeof(IUrlHelper)] = urlHelper;
             }
+
+            httpContext.Items[typeof(IUrlHelper)] = urlHelper;
 
             return urlHelper;
         }

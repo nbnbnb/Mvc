@@ -1,6 +1,7 @@
 // Copyright (c) .NET Foundation. All rights reserved.
 // Licensed under the Apache License, Version 2.0. See License.txt in the project root for license information.
 
+using System;
 using System.Collections.Generic;
 using Microsoft.AspNetCore.Mvc.ViewFeatures;
 using Xunit;
@@ -284,6 +285,128 @@ namespace Microsoft.AspNetCore.Mvc.Rendering
 
             // Assert
             Assert.Equal(expectedString, result.ToString());
+        }
+
+        [Fact]
+        public void Contextualize_WorksWithCovariantViewDataDictionary()
+        {
+            // Arrange
+            var helperToContextualize = DefaultTemplatesUtilities
+                .GetHtmlHelper<BaseModel>(model: null);
+
+            var viewContext = DefaultTemplatesUtilities
+                .GetHtmlHelper<DerivedModel>(model: null)
+                .ViewContext;
+
+            // Act
+            helperToContextualize.Contextualize(viewContext);
+
+            // Assert
+            Assert.IsType<ViewDataDictionary<BaseModel>>(
+                helperToContextualize.ViewData);
+
+            Assert.Same(helperToContextualize.ViewContext, viewContext);
+        }
+
+        [Fact]
+        public void Contextualize_ThrowsIfViewDataDictionariesAreNotCompatible()
+        {
+            // Arrange
+            var helperToContextualize = DefaultTemplatesUtilities
+                .GetHtmlHelper<BaseModel>(model: null);
+
+            var viewContext = DefaultTemplatesUtilities
+                .GetHtmlHelper<NonDerivedModel>(model: null)
+                .ViewContext;
+
+            var expectedMessage = $"Property '{nameof(ViewContext.ViewData)}' is of type " +
+                $"'{typeof(ViewDataDictionary<NonDerivedModel>).FullName}'," +
+                $" but this method requires a value of type '{typeof(ViewDataDictionary<BaseModel>).FullName}'.";
+
+            // Act & Assert
+            var exception = Assert.Throws<ArgumentException>("viewContext", () => helperToContextualize.Contextualize(viewContext));
+            Assert.Contains(expectedMessage, exception.Message);
+        }
+
+        [Fact]
+        public void Contextualize_ThrowsForNonGenericViewDataDictionaries()
+        {
+            // Arrange
+            var helperToContextualize = DefaultTemplatesUtilities
+                .GetHtmlHelper<BaseModel>(model: null);
+
+            var viewContext = DefaultTemplatesUtilities
+                .GetHtmlHelper<BaseModel>(model: null)
+                .ViewContext;
+            viewContext.ViewData = new ViewDataDictionary(viewContext.ViewData);
+
+            var expectedMessage = $"Property '{nameof(ViewContext.ViewData)}' is of type " +
+                $"'{typeof(ViewDataDictionary).FullName}'," +
+                $" but this method requires a value of type '{typeof(ViewDataDictionary<BaseModel>).FullName}'.";
+
+            // Act & Assert
+            var exception = Assert.Throws<ArgumentException>("viewContext", () => helperToContextualize.Contextualize(viewContext));
+            Assert.Contains(expectedMessage, exception.Message);
+        }
+
+        private class BaseModel
+        {
+            public string Name { get; set; }
+        }
+
+        private class DerivedModel : BaseModel
+        {
+        }
+
+        private class NonDerivedModel
+        {
+        }
+
+        [Theory]
+        [InlineData("SomeName", "SomeName")]
+        [InlineData("Obj1.Prop1", "Obj1_Prop1")]
+        [InlineData("Obj1.Prop1[0]", "Obj1_Prop1_0_")]
+        [InlineData("Obj1.Prop1[0].Prop2", "Obj1_Prop1_0__Prop2")]
+        public void GenerateIdFromName_ReturnsExpectedValues(string fullname, string expected)
+        {
+            // Arrange
+            var helper = DefaultTemplatesUtilities.GetHtmlHelper();
+
+            // Act
+            var result = helper.GenerateIdFromName(fullname);
+
+            // Assert
+            Assert.Equal(expected, result);
+        }
+
+        [Theory]
+        [InlineData(FormMethod.Get, "get")]
+        [InlineData(FormMethod.Post, "post")]
+        [InlineData((FormMethod)42, "post")]
+        public void GetFormMethodString_ReturnsExpectedValues(FormMethod method, string expected)
+        {
+            // Act
+            var result = HtmlHelper.GetFormMethodString(method);
+
+            // Assert
+            Assert.Equal(expected, result);
+        }
+
+        [Theory]
+        [InlineData("-{0}-", "-<b>boldFromObject</b>-")]
+        [InlineData("-%{0}%-", "-%<b>boldFromObject</b>%-")]
+        [InlineData("-=={0}=={0}==-", "-==<b>boldFromObject</b>==<b>boldFromObject</b>==-")]
+        public void FormatValue_ReturnsExpectedValues(string format, string expected)
+        {
+            // Arrange
+            var value = new ObjectWithToStringOverride();
+            var helper = DefaultTemplatesUtilities.GetHtmlHelper();
+
+            // Act
+            var result = helper.FormatValue(value, format);
+
+            // Assert
+            Assert.Equal(expected, result);
         }
 
         private class ObjectWithToStringOverride

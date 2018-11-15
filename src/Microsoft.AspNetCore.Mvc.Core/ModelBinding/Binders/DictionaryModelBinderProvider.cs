@@ -3,7 +3,10 @@
 
 using System;
 using System.Collections.Generic;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Internal;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Microsoft.AspNetCore.Mvc.ModelBinding.Binders
 {
@@ -31,7 +34,14 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Binders
                 var valueBinder = context.CreateBinder(context.MetadataProvider.GetMetadataForType(valueType));
 
                 var binderType = typeof(DictionaryModelBinder<,>).MakeGenericType(dictionaryType.GenericTypeArguments);
-                return (IModelBinder)Activator.CreateInstance(binderType, keyBinder, valueBinder);
+                var loggerFactory = context.Services.GetRequiredService<ILoggerFactory>();
+                var mvcOptions = context.Services.GetRequiredService<IOptions<MvcOptions>>().Value;
+                return (IModelBinder)Activator.CreateInstance(
+                    binderType,
+                    keyBinder,
+                    valueBinder,
+                    loggerFactory,
+                    mvcOptions.AllowValidatingTopLevelNodes);
             }
 
             return null;

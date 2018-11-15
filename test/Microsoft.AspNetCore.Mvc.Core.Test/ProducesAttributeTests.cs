@@ -7,19 +7,18 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Abstractions;
 using Microsoft.AspNetCore.Mvc.Filters;
-using Microsoft.AspNetCore.Mvc.Formatters.Internal;
-using Microsoft.AspNetCore.Mvc.TestCommon;
+using Microsoft.AspNetCore.Mvc.Formatters;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Primitives;
 using Moq;
 using Xunit;
 
-namespace Microsoft.AspNetCore.Mvc.Test
+namespace Microsoft.AspNetCore.Mvc
 {
     public class ProducesAttributeTests
     {
         [Fact]
-        public async Task ProducesAttribute_SetsContentType()
+        public void ProducesAttribute_SetsContentType()
         {
             // Arrange
             var mediaType1 = new StringSegment("application/json");
@@ -30,7 +29,7 @@ namespace Microsoft.AspNetCore.Mvc.Test
                             () => Task.FromResult(CreateResultExecutedContext(resultExecutingContext)));
 
             // Act
-            await producesContentAttribute.OnResultExecutionAsync(resultExecutingContext, next);
+            producesContentAttribute.OnResultExecuting(resultExecutingContext);
 
             // Assert
             var objectResult = resultExecutingContext.Result as ObjectResult;
@@ -40,7 +39,7 @@ namespace Microsoft.AspNetCore.Mvc.Test
         }
 
         [Fact]
-        public async Task ProducesContentAttribute_FormatFilterAttribute_NotActive()
+        public void ProducesContentAttribute_FormatFilterAttribute_NotActive()
         {
             // Arrange
             var producesContentAttribute = new ProducesAttribute("application/xml");
@@ -57,15 +56,15 @@ namespace Microsoft.AspNetCore.Mvc.Test
                             () => Task.FromResult(CreateResultExecutedContext(resultExecutingContext)));
 
             // Act
-            await producesContentAttribute.OnResultExecutionAsync(resultExecutingContext, next);
+            producesContentAttribute.OnResultExecuting(resultExecutingContext);
 
             // Assert
             var objectResult = Assert.IsType<ObjectResult>(resultExecutingContext.Result);
-            Assert.Equal(1, objectResult.ContentTypes.Count);
+            Assert.Single(objectResult.ContentTypes);
         }
 
         [Fact]
-        public async Task ProducesContentAttribute_FormatFilterAttribute_Active()
+        public void ProducesContentAttribute_FormatFilterAttribute_Active()
         {
             // Arrange
             var producesContentAttribute = new ProducesAttribute("application/xml");
@@ -82,11 +81,11 @@ namespace Microsoft.AspNetCore.Mvc.Test
                             () => Task.FromResult(CreateResultExecutedContext(resultExecutingContext)));
 
             // Act
-            await producesContentAttribute.OnResultExecutionAsync(resultExecutingContext, next);
+            producesContentAttribute.OnResultExecuting(resultExecutingContext);
 
             // Assert
             var objectResult = Assert.IsType<ObjectResult>(resultExecutingContext.Result);
-            Assert.Equal(0, objectResult.ContentTypes.Count);
+            Assert.Empty(objectResult.ContentTypes);
         }
 
         [Theory]
@@ -116,6 +115,8 @@ namespace Microsoft.AspNetCore.Mvc.Test
         [InlineData("*/*", "*/*")]
         [InlineData("application/xml, */*, application/json", "*/*")]
         [InlineData("*/*, application/json", "*/*")]
+        [InlineData("application/*+json", "application/*+json")]
+        [InlineData("application/json;v=1;*", "application/json;v=1;*")]
         public void ProducesAttribute_InvalidContentType_Throws(string content, string invalidContentType)
         {
             // Act
@@ -126,7 +127,7 @@ namespace Microsoft.AspNetCore.Mvc.Test
                        () => new ProducesAttribute(contentTypes[0], contentTypes.Skip(1).ToArray()));
 
             Assert.Equal(
-                string.Format("The argument '{0}' is invalid. "+
+                string.Format("The argument '{0}' is invalid. " +
                               "Media types which match all types or match all subtypes are not supported.",
                               invalidContentType),
                 ex.Message);

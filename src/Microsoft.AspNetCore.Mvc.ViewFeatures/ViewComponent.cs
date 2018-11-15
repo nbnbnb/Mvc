@@ -2,6 +2,7 @@
 // Licensed under the Apache License, Version 2.0. See License.txt in the project root for license information.
 
 using System;
+using System.Security.Claims;
 using System.Security.Principal;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
@@ -10,7 +11,6 @@ using Microsoft.AspNetCore.Mvc.Routing;
 using Microsoft.AspNetCore.Mvc.ViewComponents;
 using Microsoft.AspNetCore.Mvc.ViewEngines;
 using Microsoft.AspNetCore.Mvc.ViewFeatures;
-using Microsoft.AspNetCore.Mvc.ViewFeatures.Internal;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -30,46 +30,27 @@ namespace Microsoft.AspNetCore.Mvc
         /// <summary>
         /// Gets the <see cref="Http.HttpContext"/>.
         /// </summary>
-        public HttpContext HttpContext
-        {
-            get
-            {
-                return ViewContext?.HttpContext;
-            }
-        }
+        public HttpContext HttpContext => ViewContext?.HttpContext;
 
         /// <summary>
         /// Gets the <see cref="HttpRequest"/>.
         /// </summary>
-        public HttpRequest Request
-        {
-            get
-            {
-                return ViewContext?.HttpContext?.Request;
-            }
-        }
+        public HttpRequest Request => ViewContext?.HttpContext?.Request;
 
         /// <summary>
         /// Gets the <see cref="IPrincipal"/> for the current user.
         /// </summary>
-        public IPrincipal User
-        {
-            get
-            {
-                return ViewContext?.HttpContext?.User;
-            }
-        }
+        public IPrincipal User => ViewContext?.HttpContext?.User;
+
+        /// <summary>
+        /// Gets the <see cref="ClaimsPrincipal"/> for the current user.
+        /// </summary>
+        public ClaimsPrincipal UserClaimsPrincipal => ViewContext?.HttpContext?.User;
 
         /// <summary>
         /// Gets the <see cref="RouteData"/> for the current request.
         /// </summary>
-        public RouteData RouteData
-        {
-            get
-            {
-                return ViewContext?.RouteData;
-            }
-        }
+        public RouteData RouteData => ViewContext?.RouteData;
 
         /// <summary>
         /// Gets the view bag.
@@ -90,13 +71,7 @@ namespace Microsoft.AspNetCore.Mvc
         /// <summary>
         /// Gets the <see cref="ModelStateDictionary"/>.
         /// </summary>
-        public ModelStateDictionary ModelState
-        {
-            get
-            {
-                return ViewData?.ModelState;
-            }
-        }
+        public ModelStateDictionary ModelState => ViewData?.ModelState;
 
         /// <summary>
         /// Gets or sets the <see cref="IUrlHelper"/>.
@@ -153,24 +128,17 @@ namespace Microsoft.AspNetCore.Mvc
         /// <summary>
         /// Gets the <see cref="ViewContext"/>.
         /// </summary>
-        public ViewContext ViewContext
-        {
-            get
-            {
-                return ViewComponentContext.ViewContext;
-            }
-        }
+        public ViewContext ViewContext => ViewComponentContext.ViewContext;
 
         /// <summary>
         /// Gets the <see cref="ViewDataDictionary"/>.
         /// </summary>
-        public ViewDataDictionary ViewData
-        {
-            get
-            {
-                return ViewComponentContext.ViewData;
-            }
-        }
+        public ViewDataDictionary ViewData => ViewComponentContext.ViewData;
+
+        /// <summary>
+        /// Gets the <see cref="ITempDataDictionary"/>.
+        /// </summary>
+        public ITempDataDictionary TempData => ViewComponentContext.TempData;
 
         /// <summary>
         /// Gets or sets the <see cref="ICompositeViewEngine"/>.
@@ -220,7 +188,7 @@ namespace Microsoft.AspNetCore.Mvc
         /// <returns>A <see cref="ViewViewComponentResult"/>.</returns>
         public ViewViewComponentResult View()
         {
-            return View<object>(null, null);
+            return View(viewName: null);
         }
 
         /// <summary>
@@ -230,7 +198,7 @@ namespace Microsoft.AspNetCore.Mvc
         /// <returns>A <see cref="ViewViewComponentResult"/>.</returns>
         public ViewViewComponentResult View(string viewName)
         {
-            return View<object>(viewName, null);
+            return View(viewName, ViewData.Model);
         }
 
         /// <summary>
@@ -240,7 +208,7 @@ namespace Microsoft.AspNetCore.Mvc
         /// <returns>A <see cref="ViewViewComponentResult"/>.</returns>
         public ViewViewComponentResult View<TModel>(TModel model)
         {
-            return View(null, model);
+            return View(viewName: null, model: model);
         }
 
         /// <summary>

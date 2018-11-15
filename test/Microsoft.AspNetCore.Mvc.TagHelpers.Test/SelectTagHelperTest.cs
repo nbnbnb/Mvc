@@ -6,12 +6,12 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Html;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.AspNetCore.Mvc.Rendering;
-using Microsoft.AspNetCore.Mvc.TagHelpers.Internal;
-using Microsoft.AspNetCore.Mvc.TestCommon;
 using Microsoft.AspNetCore.Mvc.ViewFeatures;
 using Microsoft.AspNetCore.Razor.TagHelpers;
+using Microsoft.AspNetCore.Testing;
 using Moq;
 using Xunit;
 
@@ -201,6 +201,7 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
             var modelExpression = new ModelExpression(nameAndId.Name, modelExplorer);
 
             var tagHelperContext = new TagHelperContext(
+                tagName: "select",
                 allAttributes: new TagHelperAttributeList(
                     Enumerable.Empty<TagHelperAttribute>()),
                 items: new Dictionary<object, object>(),
@@ -290,6 +291,7 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
             var modelExpression = new ModelExpression(nameAndId.Name, modelExplorer);
 
             var tagHelperContext = new TagHelperContext(
+                tagName: "select",
                 allAttributes: new TagHelperAttributeList(
                     Enumerable.Empty<TagHelperAttribute>()),
                 items: new Dictionary<object, object>(),
@@ -380,6 +382,7 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
             var expectedTagName = "select";
 
             var tagHelperContext = new TagHelperContext(
+                tagName: "select",
                 allAttributes: new TagHelperAttributeList(
                     Enumerable.Empty<TagHelperAttribute>()),
                 items: new Dictionary<object, object>(),
@@ -468,6 +471,7 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
             var modelExpression = new ModelExpression(name: string.Empty, modelExplorer: modelExplorer);
 
             var tagHelperContext = new TagHelperContext(
+                tagName: "select",
                 allAttributes: new TagHelperAttributeList(
                     Enumerable.Empty<TagHelperAttribute>()),
                 items: new Dictionary<object, object>(),
@@ -556,7 +560,8 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
             var expectedTagName = "select";
 
             var tagHelperContext = new TagHelperContext(
-                contextAttributes,
+                tagName: "select",
+                allAttributes: contextAttributes,
                 items: new Dictionary<object, object>(),
                 uniqueId: "test");
 
@@ -638,7 +643,8 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
             var tagName = "select";
 
             var tagHelperContext = new TagHelperContext(
-                contextAttributes,
+                tagName: "select",
+                allAttributes: contextAttributes,
                 items: new Dictionary<object, object>(),
                 uniqueId: "test");
             var output = new TagHelperOutput(
@@ -696,6 +702,132 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
                 entry => (Type)entry.Key == typeof(SelectTagHelper));
             var actualCurrentValues = Assert.IsType<CurrentValues>(keyValuePair.Value);
             Assert.Same(currentValues, actualCurrentValues.Values);
+        }
+
+        [Fact]
+        public void Process_WithEmptyForName_Throws()
+        {
+            // Arrange
+            var expectedMessage = "The name of an HTML field cannot be null or empty. Instead use methods " +
+                "Microsoft.AspNetCore.Mvc.Rendering.IHtmlHelper.Editor or Microsoft.AspNetCore.Mvc.Rendering." +
+                "IHtmlHelper`1.EditorFor with a non-empty htmlFieldName argument value.";
+            var expectedTagName = "select";
+
+            var metadataProvider = new EmptyModelMetadataProvider();
+            var htmlGenerator = new TestableHtmlGenerator(metadataProvider);
+            var model = "model-value";
+            var modelExplorer = metadataProvider.GetModelExplorerForType(typeof(string), model);
+            var modelExpression = new ModelExpression(name: string.Empty, modelExplorer: modelExplorer);
+            var viewContext = TestableHtmlGenerator.GetViewContext(model, htmlGenerator, metadataProvider);
+            var tagHelper = new SelectTagHelper(htmlGenerator)
+            {
+                For = modelExpression,
+                ViewContext = viewContext,
+            };
+
+            var context = new TagHelperContext(new TagHelperAttributeList(), new Dictionary<object, object>(), "test");
+            var output = new TagHelperOutput(
+                expectedTagName,
+                new TagHelperAttributeList(),
+                (_, __) => Task.FromResult<TagHelperContent>(new DefaultTagHelperContent()));
+
+            // Act & Assert
+            ExceptionAssert.ThrowsArgument(
+                () => tagHelper.Process(context, output),
+                paramName: "expression",
+                exceptionMessage: expectedMessage);
+        }
+
+        [Fact]
+        public void Process_WithEmptyForName_DoesNotThrow_WithName()
+        {
+            // Arrange
+            var expectedAttributeValue = "-expression-";
+            var expectedTagName = "select";
+
+            var metadataProvider = new EmptyModelMetadataProvider();
+            var htmlGenerator = new TestableHtmlGenerator(metadataProvider);
+            var model = "model-value";
+            var modelExplorer = metadataProvider.GetModelExplorerForType(typeof(string), model);
+            var modelExpression = new ModelExpression(name: string.Empty, modelExplorer: modelExplorer);
+            var viewContext = TestableHtmlGenerator.GetViewContext(model, htmlGenerator, metadataProvider);
+            var tagHelper = new SelectTagHelper(htmlGenerator)
+            {
+                For = modelExpression,
+                Name = expectedAttributeValue,
+                ViewContext = viewContext,
+            };
+
+            var attributes = new TagHelperAttributeList
+            {
+                { "name", expectedAttributeValue },
+            };
+
+            var context = new TagHelperContext(attributes, new Dictionary<object, object>(), "test");
+            var output = new TagHelperOutput(
+                expectedTagName,
+                new TagHelperAttributeList(),
+                (_, __) => Task.FromResult<TagHelperContent>(new DefaultTagHelperContent()));
+
+            // Act
+            tagHelper.Process(context, output);
+
+            // Assert
+            Assert.Equal(expectedTagName, output.TagName);
+            Assert.False(output.IsContentModified);
+
+            var attribute = Assert.Single(output.Attributes);
+            Assert.Equal("name", attribute.Name);
+            Assert.Equal(expectedAttributeValue, attribute.Value);
+        }
+
+        [Fact]
+        public void Process_PassesNameThrough_EvenIfNullFor()
+        {
+            // Arrange
+            var expectedAttributeValue = "-expression-";
+            var expectedTagName = "span";
+
+            var selectList = Array.Empty<SelectListItem>();
+            var generator = new Mock<IHtmlGenerator>(MockBehavior.Strict);
+            generator
+                .Setup(gen => gen.GenerateGroupsAndOptions(/* optionLabel: */ null, selectList))
+                .Returns(HtmlString.Empty)
+                .Verifiable();
+
+            var metadataProvider = new EmptyModelMetadataProvider();
+            var viewContext = TestableHtmlGenerator.GetViewContext(
+                model: null,
+                htmlGenerator: generator.Object,
+                metadataProvider: metadataProvider);
+
+            var tagHelper = new SelectTagHelper(generator.Object)
+            {
+                Items = selectList,
+                Name = expectedAttributeValue,
+                ViewContext = viewContext,
+            };
+
+            var attributes = new TagHelperAttributeList
+            {
+                { "name", expectedAttributeValue },
+            };
+
+            var tagHelperContext = new TagHelperContext(attributes, new Dictionary<object, object>(), "test");
+            var output = new TagHelperOutput(
+                expectedTagName,
+                new TagHelperAttributeList(),
+                (_, __) => Task.FromResult<TagHelperContent>(new DefaultTagHelperContent()));
+
+            // Act
+            tagHelper.Process(tagHelperContext, output);
+
+            // Assert
+            generator.VerifyAll();
+            Assert.Equal(expectedTagName, output.TagName);
+            var attribute = Assert.Single(output.Attributes);
+            Assert.Equal("name", attribute.Name);
+            Assert.Equal(expectedAttributeValue, attribute.Value);
         }
 
         public class NameAndId

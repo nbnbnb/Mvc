@@ -2,10 +2,8 @@
 // Licensed under the Apache License, Version 2.0. See License.txt in the project root for license information.
 
 using System;
-using System.Reflection;
 using Microsoft.AspNetCore.Mvc.Core;
 using Microsoft.AspNetCore.Mvc.Infrastructure;
-using Microsoft.AspNetCore.Mvc.Internal;
 
 namespace Microsoft.AspNetCore.Mvc.Controllers
 {
@@ -71,8 +69,7 @@ namespace Microsoft.AspNetCore.Mvc.Controllers
                 throw new ArgumentNullException(nameof(controller));
             }
 
-            var disposable = controller as IDisposable;
-            if (disposable != null)
+            if (controller is IDisposable disposable)
             {
                 disposable.Dispose();
             }

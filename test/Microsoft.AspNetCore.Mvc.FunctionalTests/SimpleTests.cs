@@ -13,13 +13,13 @@ namespace Microsoft.AspNetCore.Mvc.FunctionalTests
     {
         public SimpleTests(MvcTestFixture<SimpleWebSite.Startup> fixture)
         {
-            Client = fixture.Client;
+            Client = fixture.CreateDefaultClient();
         }
 
         public HttpClient Client { get; }
 
         [Fact]
-        public async Task JsonSerializeFormated()
+        public async Task JsonSerializeFormatted()
         {
             // Arrange
             var expected = "{" + Environment.NewLine

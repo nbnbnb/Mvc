@@ -21,6 +21,7 @@ namespace Microsoft.AspNetCore.Mvc.Rendering
     public class TagBuilder : IHtmlContent
     {
         private AttributeDictionary _attributes;
+        private HtmlContentBuilder _innerHtml;
 
         /// <summary>
         /// Creates a new HTML tag that has the specified tag name.
@@ -34,7 +35,6 @@ namespace Microsoft.AspNetCore.Mvc.Rendering
             }
 
             TagName = tagName;
-            InnerHtml = new HtmlContentBuilder();
         }
 
         /// <summary>
@@ -57,7 +57,23 @@ namespace Microsoft.AspNetCore.Mvc.Rendering
         /// <summary>
         /// Gets the inner HTML content of the element.
         /// </summary>
-        public IHtmlContentBuilder InnerHtml { get; }
+        public IHtmlContentBuilder InnerHtml
+        {
+            get
+            {
+                if (_innerHtml == null)
+                {
+                    _innerHtml = new HtmlContentBuilder();
+                }
+
+                return _innerHtml;
+            }
+        }
+
+        /// <summary>
+        /// Gets an indication <see cref="InnerHtml"/> is not empty.
+        /// </summary>
+        public bool HasInnerHtml => _innerHtml?.Count > 0;
 
         /// <summary>
         /// Gets the tag name for this tag.
@@ -91,17 +107,21 @@ namespace Microsoft.AspNetCore.Mvc.Rendering
         }
 
         /// <summary>
-        /// Return valid HTML 4.01 "id" attribute for an element with the given <paramref name="name"/>.
+        /// Returns a valid HTML 4.01 "id" attribute value for an element with the given <paramref name="name"/>.
         /// </summary>
-        /// <param name="name">The original element name.</param>
+        /// <param name="name">
+        /// The fully-qualified expression name, ignoring the current model. Also the original HTML element name.
+        /// </param>
         /// <param name="invalidCharReplacement">
         /// The <see cref="string"/> (normally a single <see cref="char"/>) to substitute for invalid characters in
         /// <paramref name="name"/>.
         /// </param>
         /// <returns>
-        /// Valid HTML 4.01 "id" attribute for an element with the given <paramref name="name"/>.
+        /// Valid HTML 4.01 "id" attribute value for an element with the given <paramref name="name"/>.
         /// </returns>
-        /// <remarks>Valid "id" attributes are defined in http://www.w3.org/TR/html401/types.html#type-id</remarks>
+        /// <remarks>
+        /// Valid "id" attributes are defined in https://www.w3.org/TR/html401/types.html#type-id.
+        /// </remarks>
         public static string CreateSanitizedId(string name, string invalidCharReplacement)
         {
             if (invalidCharReplacement == null)
@@ -141,7 +161,7 @@ namespace Microsoft.AspNetCore.Mvc.Rendering
             stringBuffer.Append(firstChar);
 
             // Characters until 'firstIndexOfInvalidCharacter' have already been checked for validity.
-            // So just copying them. This avoids running them through Html401IdUtil.IsValidIdCharacter again.
+            // So just copy them. This avoids running them through Html401IdUtil.IsValidIdCharacter again.
             for (var index = 1; index < firstIndexOfInvalidCharacter; index++)
             {
                 stringBuffer.Append(name[index]);
@@ -164,13 +184,18 @@ namespace Microsoft.AspNetCore.Mvc.Rendering
         }
 
         /// <summary>
-        /// Generates a sanitized ID attribute for the tag by using the specified name.
+        /// Adds a valid HTML 4.01 "id" attribute for an element with the given <paramref name="name"/>. Does
+        /// nothing if <see cref="Attributes"/> already contains an "id" attribute or the <paramref name="name"/>
+        /// is <c>null</c> or empty.
         /// </summary>
-        /// <param name="name">The name to use to generate an ID attribute.</param>
+        /// <param name="name">
+        /// The fully-qualified expression name, ignoring the current model. Also the original HTML element name.
+        /// </param>
         /// <param name="invalidCharReplacement">
         /// The <see cref="string"/> (normally a single <see cref="char"/>) to substitute for invalid characters in
         /// <paramref name="name"/>.
         /// </param>
+        /// <seealso cref="CreateSanitizedId(string, string)"/>
         public void GenerateId(string name, string invalidCharReplacement)
         {
             if (invalidCharReplacement == null)
@@ -178,9 +203,17 @@ namespace Microsoft.AspNetCore.Mvc.Rendering
                 throw new ArgumentNullException(nameof(invalidCharReplacement));
             }
 
+            if (string.IsNullOrEmpty(name))
+            {
+                return;
+            }
+
             if (!Attributes.ContainsKey("id"))
             {
                 var sanitizedId = CreateSanitizedId(name, invalidCharReplacement);
+
+                // Duplicate check for null or empty to cover the corner case where name contains only invalid
+                // characters and invalidCharReplacement is empty.
                 if (!string.IsNullOrEmpty(sanitizedId))
                 {
                     Attributes["id"] = sanitizedId;
@@ -205,7 +238,11 @@ namespace Microsoft.AspNetCore.Mvc.Rendering
                     writer.Write(" ");
                     writer.Write(key);
                     writer.Write("=\"");
-                    encoder.Encode(writer, attribute.Value ?? string.Empty);
+                    if (attribute.Value != null)
+                    {
+                        encoder.Encode(writer, attribute.Value);
+                    }
+
                     writer.Write("\"");
                 }
             }
@@ -261,33 +298,69 @@ namespace Microsoft.AspNetCore.Mvc.Rendering
                 throw new ArgumentNullException(nameof(encoder));
             }
 
-            switch (TagRenderMode)
+            WriteTo(this, writer, encoder, TagRenderMode);
+        }
+
+        /// <summary>
+        /// Returns an <see cref="IHtmlContent"/> that renders the body.
+        /// </summary>
+        /// <returns>An <see cref="IHtmlContent"/> that renders the body.</returns>
+        public IHtmlContent RenderBody() => _innerHtml;
+
+        /// <summary>
+        /// Returns an <see cref="IHtmlContent"/> that renders the start tag.
+        /// </summary>
+        /// <returns>An <see cref="IHtmlContent"/> that renders the start tag.</returns>
+        public IHtmlContent RenderStartTag() => new RenderTagHtmlContent(this, TagRenderMode.StartTag);
+
+        /// <summary>
+        /// Returns an <see cref="IHtmlContent"/> that renders the end tag.
+        /// </summary>
+        /// <returns>An <see cref="IHtmlContent"/> that renders the end tag.</returns>
+        public IHtmlContent RenderEndTag() => new RenderTagHtmlContent(this, TagRenderMode.EndTag);
+
+        /// <summary>
+        /// Returns an <see cref="IHtmlContent"/> that renders the self-closing tag.
+        /// </summary>
+        /// <returns>An <see cref="IHtmlContent"/> that renders the self-closing tag.</returns>
+        public IHtmlContent RenderSelfClosingTag() => new RenderTagHtmlContent(this, TagRenderMode.SelfClosing);
+
+        private static void WriteTo(
+            TagBuilder tagBuilder,
+            TextWriter writer,
+            HtmlEncoder encoder,
+            TagRenderMode tagRenderMode)
+        {
+            switch (tagRenderMode)
             {
                 case TagRenderMode.StartTag:
                     writer.Write("<");
-                    writer.Write(TagName);
-                    AppendAttributes(writer, encoder);
+                    writer.Write(tagBuilder.TagName);
+                    tagBuilder.AppendAttributes(writer, encoder);
                     writer.Write(">");
                     break;
                 case TagRenderMode.EndTag:
                     writer.Write("</");
-                    writer.Write(TagName);
+                    writer.Write(tagBuilder.TagName);
                     writer.Write(">");
                     break;
                 case TagRenderMode.SelfClosing:
                     writer.Write("<");
-                    writer.Write(TagName);
-                    AppendAttributes(writer, encoder);
+                    writer.Write(tagBuilder.TagName);
+                    tagBuilder.AppendAttributes(writer, encoder);
                     writer.Write(" />");
                     break;
                 default:
                     writer.Write("<");
-                    writer.Write(TagName);
-                    AppendAttributes(writer, encoder);
+                    writer.Write(tagBuilder.TagName);
+                    tagBuilder.AppendAttributes(writer, encoder);
                     writer.Write(">");
-                    InnerHtml.WriteTo(writer, encoder);
+                    if (tagBuilder._innerHtml != null)
+                    {
+                        tagBuilder._innerHtml.WriteTo(writer, encoder);
+                    }
                     writer.Write("</");
-                    writer.Write(TagName);
+                    writer.Write(tagBuilder.TagName);
                     writer.Write(">");
                     break;
             }
@@ -299,6 +372,23 @@ namespace Microsoft.AspNetCore.Mvc.Rendering
             {
                 WriteTo(writer, HtmlEncoder.Default);
                 return writer.ToString();
+            }
+        }
+
+        private class RenderTagHtmlContent : IHtmlContent
+        {
+            private readonly TagBuilder _tagBuilder;
+            private readonly TagRenderMode _tagRenderMode;
+
+            public RenderTagHtmlContent(TagBuilder tagBuilder, TagRenderMode tagRenderMode)
+            {
+                _tagBuilder = tagBuilder;
+                _tagRenderMode = tagRenderMode;
+            }
+
+            public void WriteTo(TextWriter writer, HtmlEncoder encoder)
+            {
+                TagBuilder.WriteTo(_tagBuilder, writer, encoder, _tagRenderMode);
             }
         }
 

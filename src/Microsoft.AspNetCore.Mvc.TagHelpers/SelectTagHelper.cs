@@ -5,12 +5,8 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
-#if NETSTANDARD1_6
-using System.Reflection;
-#endif
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.AspNetCore.Mvc.Rendering;
-using Microsoft.AspNetCore.Mvc.TagHelpers.Internal;
 using Microsoft.AspNetCore.Mvc.ViewFeatures;
 using Microsoft.AspNetCore.Razor.TagHelpers;
 
@@ -39,13 +35,7 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
         }
 
         /// <inheritdoc />
-        public override int Order
-        {
-            get
-            {
-                return -1000;
-            }
-        }
+        public override int Order => -1000;
 
         protected IHtmlGenerator Generator { get; }
 
@@ -65,6 +55,15 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
         /// </summary>
         [HtmlAttributeName(ItemsAttributeName)]
         public IEnumerable<SelectListItem> Items { get; set; }
+
+        /// <summary>
+        /// The name of the &lt;input&gt; element.
+        /// </summary>
+        /// <remarks>
+        /// Passed through to the generated HTML in all cases. Also used to determine whether <see cref="For"/> is
+        /// valid with an empty <see cref="ModelExpression.Name"/>.
+        /// </remarks>
+        public string Name { get; set; }
 
         /// <inheritdoc />
         public override void Init(TagHelperContext context)
@@ -98,11 +97,7 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
             var realModelType = For.ModelExplorer.ModelType;
             _allowMultiple = typeof(string) != realModelType &&
                 typeof(IEnumerable).IsAssignableFrom(realModelType);
-            _currentValues = Generator.GetCurrentValues(
-                ViewContext,
-                For.ModelExplorer,
-                expression: For.Name,
-                allowMultiple: _allowMultiple);
+            _currentValues = Generator.GetCurrentValues(ViewContext, For.ModelExplorer, For.Name, _allowMultiple);
 
             // Whether or not (not being highly unlikely) we generate anything, could update contained <option/>
             // elements. Provide selected values for <option/> tag helpers.
@@ -124,6 +119,13 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
                 throw new ArgumentNullException(nameof(output));
             }
 
+            // Pass through attribute that is also a well-known HTML attribute. Must be done prior to any copying
+            // from a TagBuilder.
+            if (Name != null)
+            {
+                output.CopyHtmlAttribute(nameof(Name), context);
+            }
+
             // Ensure GenerateSelect() _never_ looks anything up in ViewData.
             var items = Items ?? Enumerable.Empty<SelectListItem>();
 
@@ -134,6 +136,18 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
                 return;
             }
 
+            // Ensure Generator does not throw due to empty "fullName" if user provided a name attribute.
+            IDictionary<string, object> htmlAttributes = null;
+            if (string.IsNullOrEmpty(For.Name) &&
+                string.IsNullOrEmpty(ViewContext.ViewData.TemplateInfo.HtmlFieldPrefix) &&
+                !string.IsNullOrEmpty(Name))
+            {
+                htmlAttributes = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
+                {
+                    { "name", Name },
+                };
+            }
+
             var tagBuilder = Generator.GenerateSelect(
                 ViewContext,
                 For.ModelExplorer,
@@ -142,12 +156,15 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
                 selectList: items,
                 currentValues: _currentValues,
                 allowMultiple: _allowMultiple,
-                htmlAttributes: null);
+                htmlAttributes: htmlAttributes);
 
             if (tagBuilder != null)
             {
                 output.MergeAttributes(tagBuilder);
-                output.PostContent.AppendHtml(tagBuilder.InnerHtml);
+                if (tagBuilder.HasInnerHtml)
+                {
+                    output.PostContent.AppendHtml(tagBuilder.InnerHtml);
+                }
             }
         }
     }

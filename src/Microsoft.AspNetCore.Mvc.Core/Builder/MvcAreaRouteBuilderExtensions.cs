@@ -4,6 +4,7 @@
 using System;
 using Microsoft.AspNetCore.Mvc.Core;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.AspNetCore.Routing.Constraints;
 
 namespace Microsoft.AspNetCore.Builder
 {
@@ -128,10 +129,10 @@ namespace Microsoft.AspNetCore.Builder
             }
 
             var defaultsDictionary = new RouteValueDictionary(defaults);
-            defaultsDictionary["area"] = areaName;
+            defaultsDictionary["area"] = defaultsDictionary["area"] ?? areaName;
 
             var constraintsDictionary = new RouteValueDictionary(constraints);
-            constraintsDictionary["area"] = areaName;
+            constraintsDictionary["area"] = constraintsDictionary["area"] ?? new StringRouteConstraint(areaName);
 
             routeBuilder.MapRoute(name, template, defaultsDictionary, constraintsDictionary, dataTokens);
             return routeBuilder;

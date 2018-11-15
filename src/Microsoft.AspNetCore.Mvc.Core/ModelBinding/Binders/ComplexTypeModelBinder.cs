@@ -6,7 +6,10 @@ using System.Collections.Generic;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Mvc.Internal;
+using Microsoft.AspNetCore.Mvc.Core;
+using Microsoft.AspNetCore.Mvc.ModelBinding.Metadata;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Microsoft.AspNetCore.Mvc.ModelBinding.Binders
 {
@@ -16,7 +19,23 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Binders
     public class ComplexTypeModelBinder : IModelBinder
     {
         private readonly IDictionary<ModelMetadata, IModelBinder> _propertyBinders;
+        private readonly ILogger _logger;
         private Func<object> _modelCreator;
+
+        /// <summary>
+        /// <para>This constructor is obsolete and will be removed in a future version. The recommended alternative
+        /// is the overload that also takes an <see cref="ILoggerFactory"/>.</para>
+        /// <para>Creates a new <see cref="ComplexTypeModelBinder"/>.</para>
+        /// </summary>
+        /// <param name="propertyBinders">
+        /// The <see cref="IDictionary{TKey, TValue}"/> of binders to use for binding properties.
+        /// </param>
+        [Obsolete("This constructor is obsolete and will be removed in a future version. The recommended alternative"
+            + " is the overload that also takes an " + nameof(ILoggerFactory) + ".")]
+        public ComplexTypeModelBinder(IDictionary<ModelMetadata, IModelBinder> propertyBinders)
+            : this(propertyBinders, NullLoggerFactory.Instance)
+        {
+        }
 
         /// <summary>
         /// Creates a new <see cref="ComplexTypeModelBinder"/>.
@@ -24,15 +43,52 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Binders
         /// <param name="propertyBinders">
         /// The <see cref="IDictionary{TKey, TValue}"/> of binders to use for binding properties.
         /// </param>
-        public ComplexTypeModelBinder(IDictionary<ModelMetadata, IModelBinder> propertyBinders)
+        /// <param name="loggerFactory">The <see cref="ILoggerFactory"/>.</param>
+        /// <remarks>
+        /// The binder will not add an error for an unbound top-level model even if
+        /// <see cref="ModelMetadata.IsBindingRequired"/> is <see langword="true"/>.
+        /// </remarks>
+        public ComplexTypeModelBinder(
+            IDictionary<ModelMetadata, IModelBinder> propertyBinders,
+            ILoggerFactory loggerFactory)
+            : this(propertyBinders, loggerFactory, allowValidatingTopLevelNodes: false)
+        {
+        }
+
+        /// <summary>
+        /// Creates a new <see cref="ComplexTypeModelBinder"/>.
+        /// </summary>
+        /// <param name="propertyBinders">
+        /// The <see cref="IDictionary{TKey, TValue}"/> of binders to use for binding properties.
+        /// </param>
+        /// <param name="loggerFactory">The <see cref="ILoggerFactory"/>.</param>
+        /// <param name="allowValidatingTopLevelNodes">
+        /// Indication that validation of top-level models is enabled. If <see langword="true"/> and
+        /// <see cref="ModelMetadata.IsBindingRequired"/> is <see langword="true"/> for a top-level model, the binder
+        /// adds a <see cref="ModelStateDictionary"/> error when the model is not bound.
+        /// </param>
+        public ComplexTypeModelBinder(
+            IDictionary<ModelMetadata, IModelBinder> propertyBinders,
+            ILoggerFactory loggerFactory,
+            bool allowValidatingTopLevelNodes)
         {
             if (propertyBinders == null)
             {
                 throw new ArgumentNullException(nameof(propertyBinders));
             }
 
+            if (loggerFactory == null)
+            {
+                throw new ArgumentNullException(nameof(loggerFactory));
+            }
+
             _propertyBinders = propertyBinders;
+            _logger = loggerFactory.CreateLogger<ComplexTypeModelBinder>();
+            AllowValidatingTopLevelNodes = allowValidatingTopLevelNodes;
         }
+
+        // Internal for testing.
+        internal bool AllowValidatingTopLevelNodes { get; }
 
         /// <inheritdoc />
         public Task BindModelAsync(ModelBindingContext bindingContext)
@@ -42,9 +98,11 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Binders
                 throw new ArgumentNullException(nameof(bindingContext));
             }
 
+            _logger.AttemptingToBindModel(bindingContext);
+
             if (!CanCreateModel(bindingContext))
             {
-                return TaskCache.CompletedTask;
+                return Task.CompletedTask;
             }
 
             // Perf: separated to avoid allocating a state machine when we don't
@@ -60,8 +118,11 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Binders
                 bindingContext.Model = CreateModel(bindingContext);
             }
 
-            foreach (var property in bindingContext.ModelMetadata.Properties)
+            var modelMetadata = bindingContext.ModelMetadata;
+            var attemptedPropertyBinding = false;
+            for (var i = 0; i < modelMetadata.Properties.Count; i++)
             {
+                var property = modelMetadata.Properties[i];
                 if (!CanBindProperty(bindingContext, property))
                 {
                     continue;
@@ -95,16 +156,34 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Binders
 
                 if (result.IsModelSet)
                 {
+                    attemptedPropertyBinding = true;
                     SetProperty(bindingContext, modelName, property, result);
                 }
                 else if (property.IsBindingRequired)
                 {
+                    attemptedPropertyBinding = true;
                     var message = property.ModelBindingMessageProvider.MissingBindRequiredValueAccessor(fieldName);
                     bindingContext.ModelState.TryAddModelError(modelName, message);
                 }
             }
 
+            // Have we created a top-level model despite an inability to bind anything in said model and a lack of
+            // other IsBindingRequired errors? Does that violate [BindRequired] on the model? This case occurs when
+            // 1. The top-level model has no public settable properties.
+            // 2. All properties in a [BindRequired] model have [BindNever] or are otherwise excluded from binding.
+            // 3. No data exists for any property.
+            if (AllowValidatingTopLevelNodes &&
+                !attemptedPropertyBinding &&
+                bindingContext.IsTopLevelObject &&
+                modelMetadata.IsBindingRequired)
+            {
+                var messageProvider = modelMetadata.ModelBindingMessageProvider;
+                var message = messageProvider.MissingBindRequiredValueAccessor(bindingContext.FieldName);
+                bindingContext.ModelState.TryAddModelError(bindingContext.ModelName, message);
+            }
+
             bindingContext.Result = ModelBindingResult.Success(bindingContext.Model);
+            _logger.DoneAttemptingToBindModel(bindingContext);
         }
 
         /// <summary>
@@ -183,8 +262,8 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Binders
                 return true;
             }
 
-            // 2. Any of the model properties can be bound using a value provider.
-            if (CanValueBindAnyModelProperties(bindingContext))
+            // 2. Any of the model properties can be bound.
+            if (CanBindAnyModelProperties(bindingContext))
             {
                 return true;
             }
@@ -192,29 +271,29 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Binders
             return false;
         }
 
-        private bool CanValueBindAnyModelProperties(ModelBindingContext bindingContext)
+        private bool CanBindAnyModelProperties(ModelBindingContext bindingContext)
         {
             // If there are no properties on the model, there is nothing to bind. We are here means this is not a top
             // level object. So we return false.
             if (bindingContext.ModelMetadata.Properties.Count == 0)
             {
+                _logger.NoPublicSettableProperties(bindingContext);
                 return false;
             }
 
-            // We want to check to see if any of the properties of the model can be bound using the value providers,
-            // because that's all that MutableObjectModelBinder can handle.
+            // We want to check to see if any of the properties of the model can be bound using the value providers or
+            // a greedy binder.
             //
-            // However, because a property might specify a custom binding source ([FromForm]), it's not correct
-            // for us to just try bindingContext.ValueProvider.ContainsPrefixAsync(bindingContext.ModelName),
-            // because that may include other value providers - that would lead us to mistakenly create the model
+            // Because a property might specify a custom binding source ([FromForm]), it's not correct
+            // for us to just try bindingContext.ValueProvider.ContainsPrefixAsync(bindingContext.ModelName);
+            // that may include other value providers - that would lead us to mistakenly create the model
             // when the data is coming from a source we should use (ex: value found in query string, but the
             // model has [FromForm]).
             //
             // To do this we need to enumerate the properties, and see which of them provide a binding source
             // through metadata, then we decide what to do.
             //
-            //      If a property has a binding source, and it's a greedy source, then it's not
-            //      allowed to come from a value provider, so we skip it.
+            //      If a property has a binding source, and it's a greedy source, then it's always bound.
             //
             //      If a property has a binding source, and it's a non-greedy source, then we'll filter the
             //      the value providers to just that source, and see if we can find a matching prefix
@@ -222,53 +301,43 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Binders
             //
             //      If a property does not have a binding source, then it's fair game for any value provider.
             //
-            // If any property meets the above conditions and has a value from valueproviders, then we'll
-            // create the model and try to bind it. OR if ALL properties of the model have a greedy source,
+            // Bottom line, if any property meets the above conditions and has a value from ValueProviders, then we'll
+            // create the model and try to bind it. Of, if ANY properties of the model have a greedy source,
             // then we go ahead and create it.
             //
-            var hasBindableProperty = false;
-            var isAnyPropertyEnabledForValueProviderBasedBinding = false;
-            foreach (var propertyMetadata in bindingContext.ModelMetadata.Properties)
+            for (var i = 0; i < bindingContext.ModelMetadata.Properties.Count; i++)
             {
+                var propertyMetadata = bindingContext.ModelMetadata.Properties[i];
                 if (!CanBindProperty(bindingContext, propertyMetadata))
                 {
                     continue;
                 }
 
-                hasBindableProperty = true;
-
-                // This check will skip properties which are marked explicitly using a non value binder.
+                // If any property can be bound from a greedy binding source, then success.
                 var bindingSource = propertyMetadata.BindingSource;
-                if (bindingSource == null || !bindingSource.IsGreedy)
+                if (bindingSource != null && bindingSource.IsGreedy)
                 {
-                    isAnyPropertyEnabledForValueProviderBasedBinding = true;
+                    return true;
+                }
 
-                    var fieldName = propertyMetadata.BinderModelName ?? propertyMetadata.PropertyName;
-                    var modelName = ModelNames.CreatePropertyModelName(
-                        bindingContext.ModelName,
-                        fieldName);
-
-                    using (bindingContext.EnterNestedScope(
-                        modelMetadata: propertyMetadata,
-                        fieldName: fieldName,
-                        modelName: modelName,
-                        model: null))
+                // Otherwise, check whether the (perhaps filtered) value providers have a match.
+                var fieldName = propertyMetadata.BinderModelName ?? propertyMetadata.PropertyName;
+                var modelName = ModelNames.CreatePropertyModelName(bindingContext.ModelName, fieldName);
+                using (bindingContext.EnterNestedScope(
+                    modelMetadata: propertyMetadata,
+                    fieldName: fieldName,
+                    modelName: modelName,
+                    model: null))
+                {
+                    // If any property can be bound from a value provider, then success.
+                    if (bindingContext.ValueProvider.ContainsPrefix(bindingContext.ModelName))
                     {
-                        // If any property can be bound from a value provider then continue.
-                        if (bindingContext.ValueProvider.ContainsPrefix(bindingContext.ModelName))
-                        {
-                            return true;
-                        }
+                        return true;
                     }
                 }
             }
 
-            if (hasBindableProperty && !isAnyPropertyEnabledForValueProviderBasedBinding)
-            {
-                // All the properties are marked with a non value provider based marker like [FromHeader] or
-                // [FromBody].
-                return true;
-            }
+            _logger.CannotBindToComplexType(bindingContext);
 
             return false;
         }
@@ -305,7 +374,6 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Binders
             return true;
         }
 
-
         /// <summary>
         /// Creates suitable <see cref="object"/> for given <paramref name="bindingContext"/>.
         /// </summary>
@@ -322,13 +390,40 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Binders
             // application developer should know that this was an invalid type to try to bind to.
             if (_modelCreator == null)
             {
+                // The following check causes the ComplexTypeModelBinder to NOT participate in binding structs as
+                // reflection does not provide information about the implicit parameterless constructor for a struct.
+                // This binder would eventually fail to construct an instance of the struct as the Linq's NewExpression
+                // compile fails to construct it.
+                var modelTypeInfo = bindingContext.ModelType.GetTypeInfo();
+                if (modelTypeInfo.IsAbstract || modelTypeInfo.GetConstructor(Type.EmptyTypes) == null)
+                {
+                    var metadata = bindingContext.ModelMetadata;
+                    switch (metadata.MetadataKind)
+                    {
+                        case ModelMetadataKind.Parameter:
+                            throw new InvalidOperationException(
+                                Resources.FormatComplexTypeModelBinder_NoParameterlessConstructor_ForParameter(
+                                    modelTypeInfo.FullName,
+                                    metadata.ParameterName));
+                        case ModelMetadataKind.Property:
+                            throw new InvalidOperationException(
+                                Resources.FormatComplexTypeModelBinder_NoParameterlessConstructor_ForProperty(
+                                    modelTypeInfo.FullName,
+                                    metadata.PropertyName,
+                                    bindingContext.ModelMetadata.ContainerType.FullName));
+                        case ModelMetadataKind.Type:
+                            throw new InvalidOperationException(
+                                Resources.FormatComplexTypeModelBinder_NoParameterlessConstructor_ForType(
+                                    modelTypeInfo.FullName));
+                    }
+                }
+
                 _modelCreator = Expression
                     .Lambda<Func<object>>(Expression.New(bindingContext.ModelType))
                     .Compile();
             }
 
             return _modelCreator();
-
         }
 
         /// <summary>
@@ -379,18 +474,17 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Binders
             }
             catch (Exception exception)
             {
-                AddModelError(exception, modelName, bindingContext, result);
+                AddModelError(exception, modelName, bindingContext);
             }
         }
 
         private static void AddModelError(
             Exception exception,
             string modelName,
-            ModelBindingContext bindingContext,
-            ModelBindingResult result)
+            ModelBindingContext bindingContext)
         {
             var targetInvocationException = exception as TargetInvocationException;
-            if (targetInvocationException != null && targetInvocationException.InnerException != null)
+            if (targetInvocationException?.InnerException != null)
             {
                 exception = targetInvocationException.InnerException;
             }

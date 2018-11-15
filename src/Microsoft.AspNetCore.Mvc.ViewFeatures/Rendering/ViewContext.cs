@@ -6,7 +6,6 @@ using System.IO;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.AspNetCore.Mvc.ViewEngines;
 using Microsoft.AspNetCore.Mvc.ViewFeatures;
-using Microsoft.AspNetCore.Mvc.ViewFeatures.Internal;
 
 namespace Microsoft.AspNetCore.Mvc.Rendering
 {
@@ -83,7 +82,7 @@ namespace Microsoft.AspNetCore.Mvc.Rendering
             Writer = writer;
 
             FormContext = new FormContext();
-            
+
             ClientValidationEnabled = htmlHelperOptions.ClientValidationEnabled;
             Html5DateRenderingMode = htmlHelperOptions.Html5DateRenderingMode;
             ValidationSummaryMessageElement = htmlHelperOptions.ValidationSummaryMessageElement;
@@ -144,7 +143,7 @@ namespace Microsoft.AspNetCore.Mvc.Rendering
         /// </summary>
         public virtual FormContext FormContext
         {
-            get { return _formContext; }
+            get => _formContext;
 
             set
             {
@@ -163,10 +162,9 @@ namespace Microsoft.AspNetCore.Mvc.Rendering
         public bool ClientValidationEnabled { get; set; }
 
         /// <summary>
-        /// Set this property to <see cref="Html5DateRenderingMode.Rfc3339" /> to have templated helpers such as
+        /// Set this property to <see cref="Html5DateRenderingMode.CurrentCulture" /> to have templated helpers such as
         /// <see cref="IHtmlHelper.Editor" /> and <see cref="IHtmlHelper{TModel}.EditorFor" /> render date and time
-        /// values as RFC 3339 compliant strings. By default these helpers render dates and times using the current
-        /// culture.
+        /// values using the current culture. By default, these helpers render dates and times as RFC 3339 compliant strings.
         /// </summary>
         public Html5DateRenderingMode Html5DateRenderingMode { get; set; }
 
@@ -229,7 +227,7 @@ namespace Microsoft.AspNetCore.Mvc.Rendering
 
         public FormContext GetFormContextForClientValidation()
         {
-            return (ClientValidationEnabled) ? FormContext : null;
+            return ClientValidationEnabled ? FormContext : null;
         }
     }
 }

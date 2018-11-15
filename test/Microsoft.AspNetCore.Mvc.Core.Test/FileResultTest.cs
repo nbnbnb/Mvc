@@ -6,11 +6,12 @@ using System.IO;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Abstractions;
-using Microsoft.AspNetCore.Mvc.Internal;
+using Microsoft.AspNetCore.Mvc.Infrastructure;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.AspNetCore.Testing.xunit;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Testing;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Net.Http.Headers;
 using Moq;
 using Xunit;
@@ -134,27 +135,6 @@ namespace Microsoft.AspNetCore.Mvc
             await Assert.ThrowsAsync<InvalidOperationException>(() => result.ExecuteResultAsync(actionContext));
         }
 
-        [Fact]
-        public async Task ExecuteResultAsync_LogsInformation_IfCanResolveLoggerFactory()
-        {
-            // Arrange
-            var httpContext = new DefaultHttpContext();
-            var services = new ServiceCollection();
-            var loggerSink = new TestSink();
-            services.AddSingleton<ILoggerFactory>(new TestLoggerFactory(loggerSink, true));
-            services.AddSingleton<EmptyFileResultExecutor>();
-            httpContext.RequestServices = services.BuildServiceProvider();
-
-            var actionContext = CreateActionContext(httpContext);
-            var result = new EmptyFileResult("application/my-type");
-
-            // Act
-            await result.ExecuteResultAsync(actionContext);
-
-            // Assert
-            Assert.Equal(1, loggerSink.Writes.Count);
-        }
-
         public static TheoryData<string, string> ContentDispositionData
         {
             get
@@ -249,6 +229,245 @@ namespace Microsoft.AspNetCore.Mvc
             Assert.Equal(expectedOutput, actual);
         }
 
+        [Fact]
+        public async Task SetsAcceptRangeHeader()
+        {
+            // Arrange
+            var httpContext = GetHttpContext();
+            var actionContext = CreateActionContext(httpContext);
+
+            var result = new EmptyFileResult("application/my-type");
+
+            // Act
+            await result.ExecuteResultAsync(actionContext);
+
+            // Assert
+            Assert.Equal("bytes", httpContext.Response.Headers[HeaderNames.AcceptRanges]);
+        }
+
+        [Theory]
+        [InlineData("\"Etag\"", "\"NotEtag\"", true, "\"Etag\"")]
+        [InlineData("\"Etag\"", "\"NotEtag\"", false, "\"Etag\"")]
+        [InlineData("\"Etag\"", null, false, null)]
+        [InlineData(null, "\"NotEtag\"", true, "\"Etag\"")]
+        [InlineData(null, "\"NotEtag\"", false, "\"Etag\"")]
+        public void GetPreconditionState_ShouldProcess(string ifMatch, string ifNoneMatch, bool isWeak, string ifRange)
+        {
+            // Arrange
+            var actionContext = new ActionContext();
+            var httpContext = new DefaultHttpContext();
+            httpContext.Request.Method = HttpMethods.Get;
+            var httpRequestHeaders = httpContext.Request.GetTypedHeaders();
+            var lastModified = DateTimeOffset.MinValue;
+            lastModified = new DateTimeOffset(lastModified.Year, lastModified.Month, lastModified.Day, lastModified.Hour, lastModified.Minute, lastModified.Second, TimeSpan.FromSeconds(0));
+            var etag = new EntityTagHeaderValue("\"Etag\"");
+            httpRequestHeaders.IfMatch = ifMatch == null ? null : new[]
+            {
+                new EntityTagHeaderValue(ifMatch),
+            };
+
+            httpRequestHeaders.IfNoneMatch = ifNoneMatch == null ? null : new[]
+            {
+                new EntityTagHeaderValue(ifNoneMatch, isWeak),
+            };
+            httpRequestHeaders.IfRange = ifRange == null ? null : new RangeConditionHeaderValue(ifRange);
+            httpRequestHeaders.IfUnmodifiedSince = lastModified;
+            httpRequestHeaders.IfModifiedSince = DateTimeOffset.MinValue.AddDays(1);
+            actionContext.HttpContext = httpContext;
+            var fileResult = (new Mock<FileResultExecutorBase>(NullLogger.Instance)).Object;
+
+            // Act
+            var state = fileResult.GetPreconditionState(
+                httpRequestHeaders,
+                lastModified,
+                etag);
+
+            // Assert
+            Assert.Equal(FileResultExecutorBase.PreconditionState.ShouldProcess, state);
+        }
+
+        [Theory]
+        [InlineData("\"NotEtag\"", null, true)]
+        [InlineData("\"NotEtag\"", null, false)]
+        [InlineData("\"Etag\"", "\"Etag\"", true)]
+        [InlineData("\"Etag\"", "\"Etag\"", false)]
+        [InlineData(null, null, false)]
+        public void GetPreconditionState_ShouldNotProcess_PreconditionFailed(string ifMatch, string ifNoneMatch, bool isWeak)
+        {
+            // Arrange
+            var actionContext = new ActionContext();
+            var httpContext = new DefaultHttpContext();
+            httpContext.Request.Method = HttpMethods.Delete;
+            var httpRequestHeaders = httpContext.Request.GetTypedHeaders();
+            var lastModified = DateTimeOffset.MinValue.AddDays(1);
+            var etag = new EntityTagHeaderValue("\"Etag\"");
+            httpRequestHeaders.IfMatch = ifMatch == null ? null : new[]
+            {
+                new EntityTagHeaderValue(ifMatch),
+            };
+
+            httpRequestHeaders.IfNoneMatch = ifNoneMatch == null ? null : new[]
+            {
+                new EntityTagHeaderValue(ifNoneMatch, isWeak),
+            };
+            httpRequestHeaders.IfUnmodifiedSince = DateTimeOffset.MinValue;
+            httpRequestHeaders.IfModifiedSince = DateTimeOffset.MinValue.AddDays(2);
+            actionContext.HttpContext = httpContext;
+            var fileResult = (new Mock<FileResultExecutorBase>(NullLogger.Instance)).Object;
+
+            // Act
+            var state = fileResult.GetPreconditionState(
+                httpRequestHeaders,
+                lastModified,
+                etag);
+
+            // Assert
+            Assert.Equal(FileResultExecutorBase.PreconditionState.PreconditionFailed, state);
+        }
+
+        [Theory]
+        [InlineData(null, "\"Etag\"", true)]
+        [InlineData(null, "\"Etag\"", false)]
+        [InlineData(null, null, false)]
+        public void GetPreconditionState_ShouldNotProcess_NotModified(string ifMatch, string ifNoneMatch, bool isWeak)
+        {
+            // Arrange
+            var actionContext = new ActionContext();
+            var httpContext = new DefaultHttpContext();
+            httpContext.Request.Method = HttpMethods.Get;
+            var httpRequestHeaders = httpContext.Request.GetTypedHeaders();
+            var lastModified = DateTimeOffset.MinValue;
+            lastModified = new DateTimeOffset(lastModified.Year, lastModified.Month, lastModified.Day, lastModified.Hour, lastModified.Minute, lastModified.Second, TimeSpan.FromSeconds(0));
+            var etag = new EntityTagHeaderValue("\"Etag\"");
+            httpRequestHeaders.IfMatch = ifMatch == null ? null : new[]
+            {
+                new EntityTagHeaderValue(ifMatch),
+            };
+
+            httpRequestHeaders.IfNoneMatch = ifNoneMatch == null ? null : new[]
+            {
+                new EntityTagHeaderValue(ifNoneMatch, isWeak),
+            };
+            httpRequestHeaders.IfModifiedSince = lastModified;
+            actionContext.HttpContext = httpContext;
+            var fileResult = (new Mock<FileResultExecutorBase>(NullLogger.Instance)).Object;
+
+            // Act
+            var state = fileResult.GetPreconditionState(
+                httpRequestHeaders,
+                lastModified,
+                etag);
+
+            // Assert
+            Assert.Equal(FileResultExecutorBase.PreconditionState.NotModified, state);
+        }
+
+        [Theory]
+        [InlineData("\"NotEtag\"", false)]
+        [InlineData("\"Etag\"", true)]
+        public void IfRangeValid_IgnoreRangeRequest(string ifRangeString, bool expected)
+        {
+            // Arrange
+            var actionContext = new ActionContext();
+            var httpContext = new DefaultHttpContext();
+            httpContext.Request.Method = HttpMethods.Get;
+            var httpRequestHeaders = httpContext.Request.GetTypedHeaders();
+            var lastModified = DateTimeOffset.MinValue;
+            lastModified = new DateTimeOffset(lastModified.Year, lastModified.Month, lastModified.Day, lastModified.Hour, lastModified.Minute, lastModified.Second, TimeSpan.FromSeconds(0));
+            var etag = new EntityTagHeaderValue("\"Etag\"");
+            httpRequestHeaders.IfRange = new RangeConditionHeaderValue(ifRangeString);
+            httpRequestHeaders.IfModifiedSince = lastModified;
+            actionContext.HttpContext = httpContext;
+            var fileResult = (new Mock<FileResultExecutorBase>(NullLogger.Instance)).Object;
+
+            // Act
+            var ifRangeIsValid = fileResult.IfRangeValid(
+                httpRequestHeaders,
+                lastModified,
+                etag);
+
+            // Assert
+            Assert.Equal(expected, ifRangeIsValid);
+        }
+
+        public static TheoryData<DateTimeOffset, int> LastModifiedDateData
+        {
+            get
+            {
+                return new TheoryData<DateTimeOffset, int>()
+                {
+                    { new DateTimeOffset(2018, 4, 9, 11, 23, 22, TimeSpan.Zero), 200 },
+                    { new DateTimeOffset(2018, 4, 9, 11, 24, 21, TimeSpan.Zero), 200 },
+                    { new DateTimeOffset(2018, 4, 9, 11, 24, 22, TimeSpan.Zero), 304 },
+                    { new DateTimeOffset(2018, 4, 9, 11, 24, 23, TimeSpan.Zero), 304 },
+                    { new DateTimeOffset(2018, 4, 9, 11, 25, 22, TimeSpan.Zero), 304 },
+                };
+            }
+        }
+
+        [Theory]
+        [MemberData(nameof(LastModifiedDateData))]
+        public async Task IfModifiedSinceComparison_OnlyUsesWholeSeconds(
+            DateTimeOffset ifModifiedSince,
+            int expectedStatusCode)
+        {
+            // Arrange
+            var httpContext = GetHttpContext();
+            httpContext.Request.Headers[HeaderNames.IfModifiedSince] = HeaderUtilities.FormatDate(ifModifiedSince);
+            var actionContext = CreateActionContext(httpContext);
+            // Represents 4/9/2018 11:24:22 AM +00:00
+            // Ticks rounded down to seconds: 636588698620000000
+            var ticks = 636588698625969382;
+            var result = new EmptyFileResult("application/test")
+            {
+                LastModified = new DateTimeOffset(ticks, TimeSpan.Zero)
+            };
+
+            // Act
+            await result.ExecuteResultAsync(actionContext);
+
+            // Assert
+            Assert.Equal(expectedStatusCode, httpContext.Response.StatusCode);
+        }
+
+        public static TheoryData<DateTimeOffset, int> IfUnmodifiedSinceDateData
+        {
+            get
+            {
+                return new TheoryData<DateTimeOffset, int>()
+                {
+                    { new DateTimeOffset(2018, 4, 9, 11, 23, 22, TimeSpan.Zero), 412 },
+                    { new DateTimeOffset(2018, 4, 9, 11, 24, 21, TimeSpan.Zero), 412 },
+                    { new DateTimeOffset(2018, 4, 9, 11, 24, 22, TimeSpan.Zero), 200 },
+                    { new DateTimeOffset(2018, 4, 9, 11, 24, 23, TimeSpan.Zero), 200 },
+                    { new DateTimeOffset(2018, 4, 9, 11, 25, 22, TimeSpan.Zero), 200 },
+                };
+            }
+        }
+
+        [Theory]
+        [MemberData(nameof(IfUnmodifiedSinceDateData))]
+        public async Task IfUnmodifiedSinceComparison_OnlyUsesWholeSeconds(DateTimeOffset ifUnmodifiedSince, int expectedStatusCode)
+        {
+            // Arrange
+            var httpContext = GetHttpContext();
+            httpContext.Request.Headers[HeaderNames.IfUnmodifiedSince] = HeaderUtilities.FormatDate(ifUnmodifiedSince);
+            var actionContext = CreateActionContext(httpContext);
+            // Represents 4/9/2018 11:24:22 AM +00:00
+            // Ticks rounded down to seconds: 636588698620000000
+            var ticks = 636588698625969382;
+            var result = new EmptyFileResult("application/test")
+            {
+                LastModified = new DateTimeOffset(ticks, TimeSpan.Zero)
+            };
+
+            // Act
+            await result.ExecuteResultAsync(actionContext);
+
+            // Assert
+            Assert.Equal(expectedStatusCode, httpContext.Response.StatusCode);
+        }
+
         private static IServiceCollection CreateServices()
         {
             var services = new ServiceCollection();
@@ -296,13 +515,18 @@ namespace Microsoft.AspNetCore.Mvc
         private class EmptyFileResultExecutor : FileResultExecutorBase
         {
             public EmptyFileResultExecutor(ILoggerFactory loggerFactory)
-                :base(CreateLogger<EmptyFileResultExecutor>(loggerFactory))
+                : base(CreateLogger<EmptyFileResultExecutor>(loggerFactory))
             {
             }
 
             public Task ExecuteAsync(ActionContext context, EmptyFileResult result)
             {
-                SetHeadersAndLog(context, result);
+                SetHeadersAndLog(
+                    context,
+                    result,
+                    fileLength: 0L,
+                    enableRangeProcessing: true,
+                    lastModified: result.LastModified);
                 result.WasWriteFileCalled = true;
                 return Task.FromResult(0);
             }

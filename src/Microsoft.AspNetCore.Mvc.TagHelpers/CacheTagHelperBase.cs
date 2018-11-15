@@ -2,6 +2,7 @@
 // Licensed under the Apache License, Version 2.0. See License.txt in the project root for license information.
 
 using System;
+using System.Globalization;
 using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Mvc.Rendering;
 using Microsoft.AspNetCore.Mvc.ViewFeatures;
@@ -20,12 +21,18 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
         private const string VaryByRouteAttributeName = "vary-by-route";
         private const string VaryByCookieAttributeName = "vary-by-cookie";
         private const string VaryByUserAttributeName = "vary-by-user";
+        private const string VaryByCultureAttributeName = "vary-by-culture";
         private const string ExpiresOnAttributeName = "expires-on";
         private const string ExpiresAfterAttributeName = "expires-after";
         private const string ExpiresSlidingAttributeName = "expires-sliding";
-        private const string CacheKeyTokenSeparator = "||";
         private const string EnabledAttributeName = "enabled";
-        private static readonly char[] AttributeSeparator = new[] { ',' };
+
+        /// <summary>
+        /// The default duration, from the time the cache entry was added, when it should be evicted.
+        /// This default duration will only be used if no other expiration criteria is specified.
+        /// The default expiration time is a sliding expiration of 30 seconds.
+        /// </summary>
+        public static readonly TimeSpan DefaultExpiration = TimeSpan.FromSeconds(30);
 
         /// <summary>
         /// Creates a new <see cref="CacheTagHelperBase"/>.
@@ -37,13 +44,7 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
         }
 
         /// <inheritdoc />
-        public override int Order
-        {
-            get
-            {
-                return -1000;
-            }
-        }
+        public override int Order => -1000;
 
         /// <summary>
         /// Gets the <see cref="System.Text.Encodings.Web.HtmlEncoder"/> which encodes the content to be cached.
@@ -95,6 +96,16 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
         public bool VaryByUser { get; set; }
 
         /// <summary>
+        /// Gets or sets a value that determines if the cached result is to be varied by request culture.
+        /// <para>
+        /// Setting this to <c>true</c> would result in the result to be varied by <see cref="CultureInfo.CurrentCulture" />
+        /// and <see cref="CultureInfo.CurrentUICulture" />.
+        /// </para>
+        /// </summary>
+        [HtmlAttributeName(VaryByCultureAttributeName)]
+        public bool VaryByCulture { get; set; }
+
+        /// <summary>
         /// Gets or sets the exact <see cref="DateTimeOffset"/> the cache entry should be evicted.
         /// </summary>
         [HtmlAttributeName(ExpiresOnAttributeName)]
@@ -117,6 +128,5 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
         /// </summary>
         [HtmlAttributeName(EnabledAttributeName)]
         public bool Enabled { get; set; } = true;
-
     }
 }

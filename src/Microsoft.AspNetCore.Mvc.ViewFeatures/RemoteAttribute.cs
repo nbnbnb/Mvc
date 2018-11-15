@@ -9,11 +9,11 @@ using System.Linq;
 using Microsoft.AspNetCore.Mvc.DataAnnotations;
 using Microsoft.AspNetCore.Mvc.ModelBinding.Validation;
 using Microsoft.AspNetCore.Mvc.Routing;
-using Microsoft.AspNetCore.Mvc.ViewFeatures;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Localization;
 using Microsoft.Extensions.Options;
+using Resources = Microsoft.AspNetCore.Mvc.ViewFeatures.Resources;
 
 namespace Microsoft.AspNetCore.Mvc
 {
@@ -26,7 +26,7 @@ namespace Microsoft.AspNetCore.Mvc
     public class RemoteAttribute : ValidationAttribute, IClientModelValidator
     {
         private string _additionalFields = string.Empty;
-        private string[] _additionalFieldsSplit = new string[0];
+        private string[] _additionalFieldsSplit = Array.Empty<string>();
         private bool _checkedForLocalizer;
         private IStringLocalizer _stringLocalizer;
 
@@ -124,7 +124,7 @@ namespace Microsoft.AspNetCore.Mvc
         /// </summary>
         public string AdditionalFields
         {
-            get { return _additionalFields; }
+            get => _additionalFields;
             set
             {
                 _additionalFields = value ?? string.Empty;
@@ -260,22 +260,19 @@ namespace Microsoft.AspNetCore.Mvc
             MergeAttribute(context.Attributes, "data-val-remote-additionalfields", additionalFields);
         }
 
-        private static bool MergeAttribute(IDictionary<string, string> attributes, string key, string value)
+        private static void MergeAttribute(IDictionary<string, string> attributes, string key, string value)
         {
-            if (attributes.ContainsKey(key))
+            if (!attributes.ContainsKey(key))
             {
-                return false;
+                attributes.Add(key, value);
             }
-
-            attributes.Add(key, value);
-            return true;
         }
 
         private static IEnumerable<string> SplitAndTrimPropertyNames(string original)
         {
             if (string.IsNullOrEmpty(original))
             {
-                return new string[0];
+                return Array.Empty<string>();
             }
 
             var split = original

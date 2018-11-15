@@ -4,7 +4,6 @@
 using System;
 using System.Collections.Generic;
 using Microsoft.AspNetCore.Mvc.Core;
-using Microsoft.Extensions.Primitives;
 using Microsoft.Net.Http.Headers;
 
 namespace Microsoft.AspNetCore.Mvc.Formatters
@@ -18,7 +17,7 @@ namespace Microsoft.AspNetCore.Mvc.Formatters
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>
-        /// Sets mapping for the format to specified media type. 
+        /// Sets mapping for the format to specified media type.
         /// If the format already exists, the media type will be overwritten with the new value.
         /// </summary>
         /// <param name="format">The format value.</param>
@@ -39,7 +38,7 @@ namespace Microsoft.AspNetCore.Mvc.Formatters
         }
 
         /// <summary>
-        /// Sets mapping for the format to specified media type. 
+        /// Sets mapping for the format to specified media type.
         /// If the format already exists, the media type will be overwritten with the new value.
         /// </summary>
         /// <param name="format">The format value.</param>
@@ -78,8 +77,7 @@ namespace Microsoft.AspNetCore.Mvc.Formatters
 
             format = RemovePeriodIfPresent(format);
 
-            string value = null;
-            _map.TryGetValue(format, out value);
+            _map.TryGetValue(format, out var value);
 
             return value;
         }
@@ -104,7 +102,9 @@ namespace Microsoft.AspNetCore.Mvc.Formatters
         {
             if (contentType.Type == "*" || contentType.SubType == "*")
             {
-                throw new ArgumentException(string.Format(Resources.FormatterMappings_NotValidMediaType, contentType));
+                throw new ArgumentException(
+                    string.Format(Resources.FormatterMappings_NotValidMediaType, contentType),
+                    nameof(contentType));
             }
         }
 
@@ -119,7 +119,7 @@ namespace Microsoft.AspNetCore.Mvc.Formatters
             {
                 if (format == ".")
                 {
-                    throw new ArgumentException(string.Format(Resources.Format_NotValid, format));
+                    throw new ArgumentException(string.Format(Resources.Format_NotValid, format), nameof(format));
                 }
 
                 format = format.Substring(1);

@@ -3,9 +3,12 @@
 
 using System.IO;
 using System.Linq;
+using ApiExplorerWebSite.Controllers;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Formatters;
+using Microsoft.AspNetCore.Mvc.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -17,29 +20,34 @@ namespace ApiExplorerWebSite
         public void ConfigureServices(IServiceCollection services)
         {
             services.AddTransient<ILoggerFactory, LoggerFactory>();
+
+            var wellKnownChangeToken = new WellKnownChangeToken();
             services.AddMvc(options =>
             {
                 options.Filters.AddService(typeof(ApiExplorerDataFilter));
 
                 options.Conventions.Add(new ApiExplorerVisibilityEnabledConvention());
                 options.Conventions.Add(new ApiExplorerVisibilityDisabledConvention(
-                    typeof(ApiExplorerVisbilityDisabledByConventionController)));
+                    typeof(ApiExplorerVisibilityDisabledByConventionController)));
+                options.Conventions.Add(new ApiExplorerInboundOutboundConvention(
+                    typeof(ApiExplorerInboundOutBoundController)));
+                options.Conventions.Add(new ApiExplorerRouteChangeConvention(wellKnownChangeToken));
 
                 var jsonOutputFormatter = options.OutputFormatters.OfType<JsonOutputFormatter>().First();
 
                 options.OutputFormatters.Clear();
                 options.OutputFormatters.Add(jsonOutputFormatter);
                 options.OutputFormatters.Add(new XmlDataContractSerializerOutputFormatter());
-            });
+            })
+            .SetCompatibilityVersion(CompatibilityVersion.Latest);
 
             services.AddSingleton<ApiExplorerDataFilter>();
+            services.AddSingleton<IActionDescriptorChangeProvider, ActionDescriptorChangeProvider>();
+            services.AddSingleton(wellKnownChangeToken);
         }
-
 
         public void Configure(IApplicationBuilder app)
         {
-            app.UseCultureReplacer();
-
             app.UseMvc(routes =>
             {
                 routes.MapRoute("default", "{controller}/{action}");
@@ -48,15 +56,18 @@ namespace ApiExplorerWebSite
 
         public static void Main(string[] args)
         {
-            var host = new WebHostBuilder()
-                .UseContentRoot(Directory.GetCurrentDirectory())
-                .UseKestrel()
-                .UseIISIntegration()
-                .UseStartup<Startup>()
+            var host = CreateWebHostBuilder(args)
                 .Build();
 
             host.Run();
         }
+
+        public static IWebHostBuilder CreateWebHostBuilder(string[] args) =>
+            new WebHostBuilder()
+                .UseContentRoot(Directory.GetCurrentDirectory())
+                .UseKestrel()
+                .UseIISIntegration()
+                .UseStartup<Startup>();
     }
 }
 

@@ -8,11 +8,11 @@ using Microsoft.AspNetCore.Mvc.Routing;
 namespace Microsoft.AspNetCore.Mvc
 {
     /// <summary>
-    /// Identifies an action that only supports the HTTP POST method.
+    /// Identifies an action that supports the HTTP POST method.
     /// </summary>
     public class HttpPostAttribute : HttpMethodAttribute
     {
-        private static readonly IEnumerable<string> _supportedMethods = new string[] { "POST" };
+        private static readonly IEnumerable<string> _supportedMethods = new [] { "POST" };
 
         /// <summary>
         /// Creates a new <see cref="HttpPostAttribute"/>.

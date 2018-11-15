@@ -4,14 +4,15 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
+using System.Globalization;
 using System.Linq;
 using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
-using Microsoft.AspNetCore.Mvc.TestCommon;
 using Microsoft.AspNetCore.Mvc.ViewEngines;
 using Microsoft.AspNetCore.Mvc.ViewFeatures;
-using Microsoft.AspNetCore.Mvc.ViewFeatures.Internal;
+using Microsoft.AspNetCore.Mvc.ViewFeatures.Buffers;
 using Microsoft.AspNetCore.Testing;
+using Microsoft.Extensions.Localization;
 using Moq;
 using Xunit;
 
@@ -29,38 +30,38 @@ namespace Microsoft.AspNetCore.Mvc.Rendering
 
         private static readonly List<SelectListItem> BasicSelectList = new List<SelectListItem>
         {
-            new SelectListItem { Text = "Zero",  Value = "0"},
-            new SelectListItem { Text = "One",   Value = "1"},
-            new SelectListItem { Text = "Two",   Value = "2"},
-            new SelectListItem { Text = "Three", Value = "3"},
+            new SelectListItem("Zero", "0"),
+            new SelectListItem("One", "1"),
+            new SelectListItem("Two", "2"),
+            new SelectListItem("Three", "3"),
         };
         private static readonly List<SelectListItem> SomeDisabledOneSelectedSelectList = new List<SelectListItem>
         {
-            new SelectListItem { Disabled = false, Selected = false, Text = "Zero",  Value = "0"},
-            new SelectListItem { Disabled = true,  Selected = true,  Text = "One",   Value = "1"},
-            new SelectListItem { Disabled = false, Selected = false, Text = "Two",  Value = "2"},
-            new SelectListItem { Disabled = true,  Selected = false, Text = "Three", Value = "3"},
+            new SelectListItem("Zero",  "0", false, false),
+            new SelectListItem("One",   "1", true, true),
+            new SelectListItem("Two",   "2", false, false),
+            new SelectListItem("Three", "3", false, true),
         };
         private static readonly List<SelectListItem> SomeGroupedSomeSelectedSelectList = new List<SelectListItem>
         {
-            new SelectListItem { Group = GroupOne, Selected = true,  Text = "Zero",  Value = "0"},
-            new SelectListItem { Group = GroupTwo, Selected = false, Text = "One",   Value = "1"},
-            new SelectListItem { Group = GroupOne, Selected = true,  Text = "Two",   Value = "2"},
-            new SelectListItem { Group = null,     Selected = false, Text = "Three", Value = "3"},
+            new SelectListItem("Zero",  "0", true)  { Group = GroupOne },
+            new SelectListItem("One",   "1", false) { Group = GroupTwo },
+            new SelectListItem("Two",   "2", true)  { Group = GroupOne },
+            new SelectListItem("Three", "3", false) { Group = null },
         };
         private static readonly List<SelectListItem> OneGroupSomeSelectedSelectList = new List<SelectListItem>
         {
-            new SelectListItem { Group = GroupOne, Selected = true,  Text = "Zero",  Value = "0"},
-            new SelectListItem { Group = GroupOne, Selected = true,  Text = "One",   Value = "1"},
-            new SelectListItem { Group = GroupOne, Selected = false, Text = "Two",   Value = "2"},
-            new SelectListItem { Group = GroupOne, Selected = false, Text = "Three", Value = "3"},
+            new SelectListItem("Zero",  "0", true)  { Group = GroupOne },
+            new SelectListItem("One",   "1", true)  { Group = GroupOne },
+            new SelectListItem("Two",   "2", false) { Group = GroupOne },
+            new SelectListItem("Three", "3", false) { Group = GroupOne },
         };
         private static readonly List<SelectListItem> OneDisabledGroupAllSelectedSelectList = new List<SelectListItem>
         {
-            new SelectListItem { Group = DisabledGroup, Selected = true, Text = "Zero",  Value = "0"},
-            new SelectListItem { Group = DisabledGroup, Selected = true, Text = "One",   Value = "1"},
-            new SelectListItem { Group = DisabledGroup, Selected = true, Text = "Two",   Value = "2"},
-            new SelectListItem { Group = DisabledGroup, Selected = true, Text = "Three", Value = "3"},
+            new SelectListItem("Zero",  "0", true)  { Group = DisabledGroup },
+            new SelectListItem("One",   "1", true)  { Group = DisabledGroup },
+            new SelectListItem("Two",   "2", true) { Group = DisabledGroup },
+            new SelectListItem("Three", "3", true) { Group = DisabledGroup },
         };
         private static readonly List<SelectListItem> SourcesSelectList = new List<SelectListItem>
         {
@@ -375,15 +376,14 @@ namespace Microsoft.AspNetCore.Mvc.Rendering
             // Arrange
             var expected = "The name of an HTML field cannot be null or empty. Instead use methods " +
                 "Microsoft.AspNetCore.Mvc.Rendering.IHtmlHelper.Editor or Microsoft.AspNetCore.Mvc.Rendering." +
-                "IHtmlHelper`1.EditorFor with a non-empty htmlFieldName argument value." +
-                Environment.NewLine + "Parameter name: expression";
+                "IHtmlHelper`1.EditorFor with a non-empty htmlFieldName argument value.";
             var helper = DefaultTemplatesUtilities.GetHtmlHelper();
 
             // Act & Assert
-            var ex = Assert.Throws<ArgumentException>(
+            ExceptionAssert.ThrowsArgument(
+                () => helper.DropDownList(null, selectList: null, optionLabel: null, htmlAttributes: null),
                 "expression",
-                () => helper.DropDownList(null, selectList: null, optionLabel: null, htmlAttributes: null));
-            Assert.Equal(expected, ex.Message);
+                expected);
         }
 
         [Theory]
@@ -1037,7 +1037,7 @@ namespace Microsoft.AspNetCore.Mvc.Rendering
         }
 
         [Fact]
-        public void ListBoxFor_WithUnreleatedExpression_GeneratesExpectedValue()
+        public void ListBoxFor_WithUnrelatedExpression_GeneratesExpectedValue()
         {
             // Arrange
             var unrelated = new[] { "2" };
@@ -1297,6 +1297,32 @@ namespace Microsoft.AspNetCore.Mvc.Rendering
                 () => htmlHelper.GetEnumSelectList<StructWithFields>(),
                 "TEnum",
                 $"The type '{ typeof(StructWithFields).FullName }' is not supported.");
+        }
+
+        [Fact]
+        [ReplaceCulture("en-US", "en-US")]
+        public void GetEnumSelectListTEnum_DisplayAttributeUsesIStringLocalizer()
+        {
+            // Arrange
+            var stringLocalizer = new Mock<IStringLocalizer>();
+            stringLocalizer
+                .Setup(s => s[It.IsAny<string>()])
+                .Returns<string>((s) => { return new LocalizedString(s, s + " " + CultureInfo.CurrentCulture); });
+            var stringLocalizerFactory = new Mock<IStringLocalizerFactory>();
+            stringLocalizerFactory
+                .Setup(s => s.Create(It.IsAny<Type>()))
+                .Returns(stringLocalizer.Object);
+
+            var metadataProvider = TestModelMetadataProvider.CreateDefaultProvider(stringLocalizerFactory.Object);
+            var metadata = metadataProvider.GetMetadataForType(typeof(EnumWithFields));
+            var htmlHelper = new TestHtmlHelper(metadataProvider);
+
+            // Act
+            var result = htmlHelper.GetEnumSelectList<EnumWithDisplayNames>();
+
+            // Assert
+            var zeroSelect = Assert.Single(result, s => s.Value.Equals("0", StringComparison.Ordinal));
+            Assert.Equal("cero en-US", zeroSelect.Text);
         }
 
         [Fact]

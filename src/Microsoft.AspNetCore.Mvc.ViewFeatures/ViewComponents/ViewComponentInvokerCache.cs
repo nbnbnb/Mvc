@@ -3,10 +3,11 @@
 
 using System;
 using System.Collections.Concurrent;
-using Microsoft.AspNetCore.Mvc.Internal;
-using Microsoft.AspNetCore.Mvc.ViewComponents;
+using Microsoft.AspNetCore.Mvc.Infrastructure;
+using Microsoft.AspNetCore.Mvc.ViewFeatures;
+using Microsoft.Extensions.Internal;
 
-namespace Microsoft.AspNetCore.Mvc.ViewFeatures.Internal
+namespace Microsoft.AspNetCore.Mvc.ViewComponents
 {
     public class ViewComponentInvokerCache
     {
@@ -36,13 +37,12 @@ namespace Microsoft.AspNetCore.Mvc.ViewFeatures.Internal
             }
         }
 
-        public ObjectMethodExecutor GetViewComponentMethodExecutor(ViewComponentContext viewComponentContext)
+        internal ObjectMethodExecutor GetViewComponentMethodExecutor(ViewComponentContext viewComponentContext)
         {
             var cache = CurrentCache;
             var viewComponentDescriptor = viewComponentContext.ViewComponentDescriptor;
 
-            ObjectMethodExecutor executor;
-            if (cache.Entries.TryGetValue(viewComponentDescriptor, out executor))
+            if (cache.Entries.TryGetValue(viewComponentDescriptor, out var executor))
             {
                 return executor;
             }
@@ -55,7 +55,13 @@ namespace Microsoft.AspNetCore.Mvc.ViewFeatures.Internal
                     nameof(ViewComponentDescriptor)));
             }
 
-            executor = ObjectMethodExecutor.Create(viewComponentDescriptor.MethodInfo, viewComponentDescriptor.TypeInfo);
+            var parameterDefaultValues = ParameterDefaultValues
+                .GetParameterDefaultValues(methodInfo);
+
+            executor = ObjectMethodExecutor.Create(
+                viewComponentDescriptor.MethodInfo,
+                viewComponentDescriptor.TypeInfo,
+                parameterDefaultValues);
 
             cache.Entries.TryAdd(viewComponentDescriptor, executor);
             return executor;

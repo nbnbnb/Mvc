@@ -3,10 +3,10 @@
 
 using System;
 using System.Buffers;
+using System.ComponentModel;
 using System.IO;
 using System.Text;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Mvc.Formatters.Json.Internal;
 using Newtonsoft.Json;
 
 namespace Microsoft.AspNetCore.Mvc.Formatters
@@ -50,6 +50,7 @@ namespace Microsoft.AspNetCore.Mvc.Formatters
             SupportedEncodings.Add(Encoding.Unicode);
             SupportedMediaTypes.Add(MediaTypeHeaderValues.ApplicationJson);
             SupportedMediaTypes.Add(MediaTypeHeaderValues.TextJson);
+            SupportedMediaTypes.Add(MediaTypeHeaderValues.ApplicationAnyJsonSyntax);
         }
 
         /// <summary>
@@ -60,6 +61,16 @@ namespace Microsoft.AspNetCore.Mvc.Formatters
         /// <see cref="JsonOutputFormatter"/> has been used will have no effect.
         /// </remarks>
         protected JsonSerializerSettings SerializerSettings { get; }
+
+        /// <summary>
+        /// Gets the <see cref="JsonSerializerSettings"/> used to configure the <see cref="JsonSerializer"/>.
+        /// </summary>
+        /// <remarks>
+        /// Any modifications to the <see cref="JsonSerializerSettings"/> object after this
+        /// <see cref="JsonOutputFormatter"/> has been used will have no effect.
+        /// </remarks>
+        [EditorBrowsable(EditorBrowsableState.Never)]
+        public JsonSerializerSettings PublicSerializerSettings => SerializerSettings;
 
         /// <summary>
         /// Writes the given <paramref name="value"/> as JSON using the given
@@ -97,6 +108,7 @@ namespace Microsoft.AspNetCore.Mvc.Formatters
             {
                 ArrayPool = _charPool,
                 CloseOutput = false,
+                AutoCompleteOnClose = false
             };
 
             return jsonWriter;

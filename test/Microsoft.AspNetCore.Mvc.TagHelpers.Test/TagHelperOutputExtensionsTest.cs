@@ -5,9 +5,12 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Html;
 using Microsoft.AspNetCore.Mvc.Rendering;
 using Microsoft.AspNetCore.Razor.TagHelpers;
+using Microsoft.AspNetCore.Razor.TagHelpers.Testing;
 using Microsoft.AspNetCore.Testing;
+using Microsoft.Extensions.WebEncoders.Testing;
 using Xunit;
 
 namespace Microsoft.AspNetCore.Mvc.TagHelpers
@@ -339,7 +342,8 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
                 getChildContentAsync: (useCachedResult, encoder) => Task.FromResult<TagHelperContent>(
                     new DefaultTagHelperContent()));
             var context = new TagHelperContext(
-                allAttributes,
+                tagName: "p",
+                allAttributes: allAttributes,
                 items: new Dictionary<object, object>(),
                 uniqueId: "test");
 
@@ -440,7 +444,8 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
                 getChildContentAsync: (useCachedResult, encoder) => Task.FromResult<TagHelperContent>(
                     new DefaultTagHelperContent()));
             var context = new TagHelperContext(
-                allAttributes,
+                tagName: "p",
+                allAttributes: allAttributes,
                 items: new Dictionary<object, object>(),
                 uniqueId: "test");
 
@@ -467,6 +472,7 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
                     return Task.FromResult<TagHelperContent>(tagHelperContent);
                 });
             var tagHelperContext = new TagHelperContext(
+                tagName: "p",
                 allAttributes: new TagHelperAttributeList
                 {
                     { attributeName, attributeValue }
@@ -502,6 +508,7 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
                 });
             var expectedAttribute = new TagHelperAttribute(attributeName, "world2");
             var tagHelperContext = new TagHelperContext(
+                tagName: "p",
                 allAttributes: new TagHelperAttributeList
                 {
                     { attributeName, "world" }
@@ -532,6 +539,7 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
                     return Task.FromResult<TagHelperContent>(tagHelperContent);
                 });
             var tagHelperContext = new TagHelperContext(
+                tagName: "p",
                 allAttributes: new TagHelperAttributeList
                 {
                     { "hello", "world" }
@@ -676,7 +684,7 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
                         },
                         new TagHelperAttributeList
                         {
-                            { "class", "btn2 btn" }
+                            { "clASS", "btn2 btn" }
                         }
                     },
                     {
@@ -691,7 +699,7 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
                         },
                         new TagHelperAttributeList
                         {
-                            { "class", "btn2 btn" }
+                            { "clASS", "btn2 btn" }
                         }
                     },
                     {
@@ -706,7 +714,7 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
                         },
                         new TagHelperAttributeList
                         {
-                            { "class", "btn2 btn" }
+                            { "clASS", "btn2 btn" }
                         }
                     },
                     {
@@ -725,7 +733,7 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
                         new TagHelperAttributeList
                         {
                             { "before", "before value" },
-                            { "class", "btn2 btn" },
+                            { "clASS", "btn2 btn" },
                             { "mid", "mid value" },
                             { "after", "after value" },
                         }
@@ -748,7 +756,7 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
                         new TagHelperAttributeList
                         {
                             { "before", "before value" },
-                            { "class", "btn2 btn" },
+                            { "clASS", "btn2 btn" },
                             { "mid", "mid value" },
                             { "after", "after value" },
                             { "A", "A Value" },
@@ -833,7 +841,7 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
 
             // Assert
             var attribute = Assert.Single(tagHelperOutput.Attributes);
-            Assert.Equal(expectedAttribute, attribute);
+            Assert.Equal(expectedAttribute, attribute, CaseSensitiveTagHelperAttributeComparer.Default);
         }
 
         [Theory]
@@ -859,7 +867,10 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
 
             // Assert
             var attribute = Assert.Single(tagHelperOutput.Attributes);
-            Assert.Equal(new TagHelperAttribute(originalName, "Hello btn"), attribute);
+            Assert.Equal(
+                new TagHelperAttribute(originalName, "Hello btn"),
+                attribute,
+                CaseSensitiveTagHelperAttributeComparer.Default);
         }
 
         [Fact]
@@ -953,48 +964,190 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
             tagHelperOutput.MergeAttributes(tagBuilder);
 
             // Assert
-            Assert.Equal(tagHelperOutput.Attributes.Count, 2);
+            Assert.Equal(2, tagHelperOutput.Attributes.Count);
             var attribute = Assert.Single(tagHelperOutput.Attributes, attr => attr.Name.Equals("class"));
             Assert.Equal(expectedOutputAttribute.Value, attribute.Value);
             attribute = Assert.Single(tagHelperOutput.Attributes, attr => attr.Name.Equals("for"));
             Assert.Equal(expectedBuilderAttribute.Value, attribute.Value);
         }
 
-        private class CaseSensitiveTagHelperAttributeComparer : IEqualityComparer<TagHelperAttribute>
+        [Fact]
+        public void Single_AddClass()
         {
-            public readonly static CaseSensitiveTagHelperAttributeComparer Default =
-                new CaseSensitiveTagHelperAttributeComparer();
+            // Arrange
+            var expectedValue = "class=\"HtmlEncode[[btn]]\"";
+            var htmlEncoder = new HtmlTestEncoder();
 
-            private CaseSensitiveTagHelperAttributeComparer()
-            {
-            }
+            var tagHelperOutput = new TagHelperOutput(
+                tagName: "p",
+                attributes: new TagHelperAttributeList(),
+                getChildContentAsync: (useCachedResult, encoder) => Task.FromResult<TagHelperContent>(
+                    new DefaultTagHelperContent()));
 
-            public bool Equals(TagHelperAttribute attributeX, TagHelperAttribute attributeY)
-            {
-                if (attributeX == attributeY)
-                {
-                    return true;
-                }
+            // Act
+            tagHelperOutput.AddClass("btn", htmlEncoder);
 
-                // Normal comparer (TagHelperAttribute.Equals()) doesn't care about the Name case, in tests we do.
-                return attributeX != null &&
-                    string.Equals(attributeX.Name, attributeY.Name, StringComparison.Ordinal) &&
-                    attributeX.ValueStyle == attributeY.ValueStyle &&
-                    (attributeX.ValueStyle == HtmlAttributeValueStyle.Minimized || Equals(attributeX.Value, attributeY.Value));
-            }
+            // Assert
+            var classAttribute = Assert.Single(tagHelperOutput.Attributes, attr => attr.Name.Equals("class"));
+            Assert.Equal(expectedValue, HtmlContentUtilities.HtmlContentToString(classAttribute));
+        }
 
-            public int GetHashCode(TagHelperAttribute attribute)
-            {
-                // Manually combine hash codes here. We can't reference HashCodeCombiner because we have internals visible
-                // from Mvc.Core and Mvc.TagHelpers; both of which reference HashCodeCombiner.
-                var baseHashCode = 0x1505L;
-                var attributeHashCode = attribute.GetHashCode();
-                var combinedHash = ((baseHashCode << 5) + baseHashCode) ^ attributeHashCode;
-                var nameHashCode = StringComparer.Ordinal.GetHashCode(attribute.Name);
-                combinedHash = ((combinedHash << 5) + combinedHash) ^ nameHashCode;
+        [Fact]
+        public void Multiple_AddClass()
+        {
+            // Arrange
+            var expectedValue = "class=\"HtmlEncode[[btn]] HtmlEncode[[btn-primary]]\"";
+            var htmlEncoder = new HtmlTestEncoder();
 
-                return combinedHash.GetHashCode();
-            }
+            var tagHelperOutput = new TagHelperOutput(
+                tagName: "p",
+                attributes: new TagHelperAttributeList(),
+                getChildContentAsync: (useCachedResult, encoder) => Task.FromResult<TagHelperContent>(
+                    new DefaultTagHelperContent()));
+
+            // Act
+            tagHelperOutput.AddClass("btn", htmlEncoder);
+            tagHelperOutput.AddClass("btn-primary", htmlEncoder);
+
+            // Assert
+            var classAttribute = Assert.Single(tagHelperOutput.Attributes, attr => attr.Name.Equals("class"));
+            Assert.Equal(expectedValue, HtmlContentUtilities.HtmlContentToString(classAttribute));
+        }
+
+        [Fact]
+        public void Multiple_AddClass_RemoveClass_RemovesAllButOne()
+        {
+            // Arrange
+            var expectedValue = "class=\"HtmlEncode[[btn]]\"";
+            var htmlEncoder = new HtmlTestEncoder();
+
+            var tagHelperOutput = new TagHelperOutput(
+                tagName: "p",
+                attributes: new TagHelperAttributeList(),
+                getChildContentAsync: (useCachedResult, encoder) => Task.FromResult<TagHelperContent>(
+                    new DefaultTagHelperContent()));
+
+            tagHelperOutput.AddClass("btn", htmlEncoder);
+            tagHelperOutput.AddClass("btn-success", htmlEncoder);
+            tagHelperOutput.AddClass("btn-primary", htmlEncoder);
+
+            // Act
+            tagHelperOutput.RemoveClass("btn-success", htmlEncoder);
+            tagHelperOutput.RemoveClass("btn-primary", htmlEncoder);
+
+            // Assert
+            var classAttribute = Assert.Single(tagHelperOutput.Attributes, attr => attr.Name.Equals("class"));
+            Assert.Equal(expectedValue, HtmlContentUtilities.HtmlContentToString(classAttribute));
+        }
+
+        [Fact]
+        public void AddClass_RemoveClass_ContainsSpace()
+        {
+            // Arrange
+            var classValue = "btn btn-success";
+            var expected = new ArgumentException(Resources.ArgumentCannotContainHtmlSpace, nameof(classValue)).Message;
+            var htmlEncoder = new HtmlTestEncoder();
+
+            var tagHelperOutput = new TagHelperOutput(
+                tagName: "p",
+                attributes: new TagHelperAttributeList(),
+                getChildContentAsync: (useCachedResult, encoder) => Task.FromResult<TagHelperContent>(
+                    new DefaultTagHelperContent()));
+
+            // Act and Assert
+            var exceptionAdd = Assert.Throws<ArgumentException>(() => tagHelperOutput.AddClass(classValue, htmlEncoder));
+            var exceptionRemove = Assert.Throws<ArgumentException>(() => tagHelperOutput.RemoveClass(classValue, htmlEncoder));
+            Assert.Equal(expected, exceptionAdd.Message);
+            Assert.Equal(expected, exceptionRemove.Message);
+        }
+
+        [Fact]
+        public void Single_RemoveClass_RemovesDuplicates_RemovesEntirely()
+        {
+            // Arrange
+            var htmlEncoder = new HtmlTestEncoder();
+
+            var tagHelperOutput = new TagHelperOutput(
+                tagName: "p",
+                attributes: new TagHelperAttributeList(),
+                getChildContentAsync: (useCachedResult, encoder) => Task.FromResult<TagHelperContent>(
+                    new DefaultTagHelperContent()));
+
+            tagHelperOutput.Attributes.SetAttribute("class", new HtmlString("HtmlEncode[[btn]] HtmlEncode[[btn]]"));
+
+            // Act
+            tagHelperOutput.RemoveClass("btn", htmlEncoder);
+
+            // Assert
+            var classAttribute = tagHelperOutput.Attributes["class"];
+            Assert.Null(classAttribute);
+        }
+
+        [Fact]
+        public void Single_RemoveClass_RemovesDuplicates()
+        {
+            // Arrange
+            var expectedValue = "class=\"HtmlEncode[[btn-primary]]\"";
+            var htmlEncoder = new HtmlTestEncoder();
+
+            var tagHelperOutput = new TagHelperOutput(
+                tagName: "p",
+                attributes: new TagHelperAttributeList(),
+                getChildContentAsync: (useCachedResult, encoder) => Task.FromResult<TagHelperContent>(
+                    new DefaultTagHelperContent()));
+
+            tagHelperOutput.Attributes.SetAttribute("class", new HtmlString("HtmlEncode[[btn]] HtmlEncode[[btn-primary]] HtmlEncode[[btn]]"));
+
+            // Act
+            tagHelperOutput.RemoveClass("btn", htmlEncoder);
+
+            // Assert
+            var classAttribute = Assert.Single(tagHelperOutput.Attributes, attr => attr.Name.Equals("class"));
+            Assert.Equal(expectedValue, HtmlContentUtilities.HtmlContentToString(classAttribute));
+        }
+
+        [Fact]
+        public void Single_RemoveClass_RemovesEntirely()
+        {
+            var htmlEncoder = new HtmlTestEncoder();
+
+            var tagHelperOutput = new TagHelperOutput(
+                tagName: "p",
+                attributes: new TagHelperAttributeList(),
+                getChildContentAsync: (useCachedResult, encoder) => Task.FromResult<TagHelperContent>(
+                    new DefaultTagHelperContent()));
+
+            tagHelperOutput.Attributes.SetAttribute("class", new HtmlString("HtmlEncode[[btn]]"));
+
+            // Act
+            tagHelperOutput.RemoveClass("btn", htmlEncoder);
+
+            // Assert
+            var classAttribute = tagHelperOutput.Attributes["class"];
+            Assert.Null(classAttribute);
+        }
+
+        [Fact]
+        public void Single_RemoveClass()
+        {
+            // Arrange
+            var expectedValue = "class=\"HtmlEncode[[btn]]\"";
+            var htmlEncoder = new HtmlTestEncoder();
+
+            var tagHelperOutput = new TagHelperOutput(
+                tagName: "p",
+                attributes: new TagHelperAttributeList(),
+                getChildContentAsync: (useCachedResult, encoder) => Task.FromResult<TagHelperContent>(
+                    new DefaultTagHelperContent()));
+
+            tagHelperOutput.Attributes.SetAttribute("class", new HtmlString("HtmlEncode[[btn]] HtmlEncode[[btn-primary]]"));
+
+            // Act
+            tagHelperOutput.RemoveClass("btn-primary", htmlEncoder);
+
+            // Assert
+            var classAttribute = Assert.Single(tagHelperOutput.Attributes, attr => attr.Name.Equals("class"));
+            Assert.Equal(expectedValue, HtmlContentUtilities.HtmlContentToString(classAttribute));
         }
     }
 }

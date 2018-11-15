@@ -7,10 +7,11 @@ using System.Text;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Abstractions;
-using Microsoft.AspNetCore.Mvc.Formatters.Json.Internal;
+using Microsoft.AspNetCore.Mvc.Formatters;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging.Testing;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Newtonsoft.Json;
 using Xunit;
 
@@ -46,7 +47,7 @@ namespace Microsoft.AspNetCore.Mvc
             var executor = new JsonResultExecutor(
                 new TestHttpResponseStreamWriterFactory(),
                 NullLogger<JsonResultExecutor>.Instance,
-                new TestOptionsManager<MvcJsonOptions>(),
+                Options.Create(new MvcJsonOptions()),
                 ArrayPool<char>.Shared);
 
             var services = new ServiceCollection();

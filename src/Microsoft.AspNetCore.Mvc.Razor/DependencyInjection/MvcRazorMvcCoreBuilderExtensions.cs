@@ -2,20 +2,26 @@
 // Licensed under the Apache License, Version 2.0. See License.txt in the project root for license information.
 
 using System;
+using System.Diagnostics;
 using System.Linq;
+using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ApplicationParts;
 using Microsoft.AspNetCore.Mvc.Razor;
 using Microsoft.AspNetCore.Mvc.Razor.Compilation;
-using Microsoft.AspNetCore.Mvc.Razor.Directives;
-using Microsoft.AspNetCore.Mvc.Razor.Internal;
+using Microsoft.AspNetCore.Mvc.Razor.Extensions;
+using Microsoft.AspNetCore.Mvc.Razor.Infrastructure;
 using Microsoft.AspNetCore.Mvc.Razor.TagHelpers;
 using Microsoft.AspNetCore.Mvc.Rendering;
-using Microsoft.AspNetCore.Razor.Compilation.TagHelpers;
-using Microsoft.AspNetCore.Razor.Runtime.TagHelpers;
+using Microsoft.AspNetCore.Mvc.ViewFeatures;
+using Microsoft.AspNetCore.Razor.Language;
 using Microsoft.AspNetCore.Razor.TagHelpers;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using CompilationTagHelperFeature = Microsoft.CodeAnalysis.Razor.CompilationTagHelperFeature;
+using DefaultTagHelperDescriptorProvider = Microsoft.CodeAnalysis.Razor.DefaultTagHelperDescriptorProvider;
 
 namespace Microsoft.Extensions.DependencyInjection
 {
@@ -53,25 +59,40 @@ namespace Microsoft.Extensions.DependencyInjection
             AddRazorViewEngineFeatureProviders(builder);
             AddRazorViewEngineServices(builder.Services);
 
-            if (setupAction != null)
-            {
-                builder.Services.Configure(setupAction);
-            }
+            builder.Services.Configure(setupAction);
 
             return builder;
         }
 
         private static void AddRazorViewEngineFeatureProviders(IMvcCoreBuilder builder)
         {
+#pragma warning disable CS0618 // Type or member is obsolete
+            if (!builder.PartManager.FeatureProviders.OfType<MetadataReferenceFeatureProvider>().Any())
+            {
+                builder.PartManager.FeatureProviders.Add(new MetadataReferenceFeatureProvider());
+            }
+#pragma warning restore CS0618 // Type or member is obsolete
+
             if (!builder.PartManager.FeatureProviders.OfType<TagHelperFeatureProvider>().Any())
             {
                 builder.PartManager.FeatureProviders.Add(new TagHelperFeatureProvider());
             }
 
-            if (!builder.PartManager.FeatureProviders.OfType<MetadataReferenceFeatureProvider>().Any())
+            // ViewFeature items have precedence semantics - when two views have the same path \ identifier,
+            // the one that appears earlier in the list wins. Therefore the ordering of
+            // RazorCompiledItemFeatureProvider and ViewsFeatureProvider is pertinent - any view compiled
+            // using the Sdk will be preferred to views compiled using MvcPrecompilation.
+            if (!builder.PartManager.FeatureProviders.OfType<RazorCompiledItemFeatureProvider>().Any())
             {
-                builder.PartManager.FeatureProviders.Add(new MetadataReferenceFeatureProvider());
+                builder.PartManager.FeatureProviders.Add(new RazorCompiledItemFeatureProvider());
             }
+
+#pragma warning disable CS0618 // Type or member is obsolete
+            if (!builder.PartManager.FeatureProviders.OfType<ViewsFeatureProvider>().Any())
+            {
+                builder.PartManager.FeatureProviders.Add(new ViewsFeatureProvider());
+            }
+#pragma warning restore CS0618 // Type or member is obsolete
         }
 
         /// <summary>
@@ -96,7 +117,7 @@ namespace Microsoft.Extensions.DependencyInjection
         /// </summary>
         /// <remarks>
         /// The callback will be invoked on any <typeparamref name="TTagHelper"/> instance before the
-        /// <see cref="ITagHelper.ProcessAsync(TagHelperContext, TagHelperOutput)"/> method is called.
+        /// <see cref="ITagHelperComponent.ProcessAsync(TagHelperContext, TagHelperOutput)"/> method is called.
         /// </remarks>
         /// <typeparam name="TTagHelper">The type of <see cref="ITagHelper"/> being initialized.</typeparam>
         /// <param name="builder">The <see cref="IMvcCoreBuilder"/> instance this method extends.</param>
@@ -127,53 +148,90 @@ namespace Microsoft.Extensions.DependencyInjection
         // Internal for testing.
         internal static void AddRazorViewEngineServices(IServiceCollection services)
         {
-            services.TryAddEnumerable(
-                ServiceDescriptor.Transient<
-                    IConfigureOptions<RazorViewEngineOptions>,
-                    DependencyContextRazorViewEngineOptionsSetup>());
-
-            // This caches compilation related details that are valid across the lifetime of the application.
-            services.TryAddSingleton<ICompilationService, DefaultRoslynCompilationService>();
+            services.TryAddSingleton<CSharpCompiler>();
+#pragma warning disable CS0618 // Type or member is obsolete
+            services.TryAddSingleton<RazorReferenceManager, DefaultRazorReferenceManager>();
+#pragma warning restore CS0618 // Type or member is obsolete
 
             services.TryAddEnumerable(
                 ServiceDescriptor.Transient<IConfigureOptions<MvcViewOptions>, MvcRazorMvcViewOptionsSetup>());
+
             services.TryAddEnumerable(
                 ServiceDescriptor.Transient<IConfigureOptions<RazorViewEngineOptions>, RazorViewEngineOptionsSetup>());
+
+            services.TryAddEnumerable(
+                ServiceDescriptor.Transient<IPostConfigureOptions<RazorViewEngineOptions>, RazorViewEngineOptionsSetup>());
 
             services.TryAddSingleton<
                 IRazorViewEngineFileProviderAccessor,
                 DefaultRazorViewEngineFileProviderAccessor>();
 
-            services.TryAddSingleton<IRazorViewEngine, RazorViewEngine>();
-
-            services.TryAdd(ServiceDescriptor.Singleton<IChunkTreeCache>(serviceProvider =>
+            services.TryAddSingleton<IRazorViewEngine>(s =>
             {
-                var accessor = serviceProvider.GetRequiredService<IRazorViewEngineFileProviderAccessor>();
-                return new DefaultChunkTreeCache(accessor.FileProvider);
-            }));
+                var pageFactory = s.GetRequiredService<IRazorPageFactoryProvider>();
+                var pageActivator = s.GetRequiredService<IRazorPageActivator>();
+                var htmlEncoder = s.GetRequiredService<HtmlEncoder>();
+                var optionsAccessor = s.GetRequiredService<IOptions<RazorViewEngineOptions>>();
+                var razorFileSystem = s.GetRequiredService<RazorProjectFileSystem>();
+                var loggerFactory = s.GetRequiredService<ILoggerFactory>();
+                var diagnosticSource = s.GetRequiredService<DiagnosticSource>();
 
-            services.TryAddSingleton<ITagHelperTypeResolver, TagHelperTypeResolver>();
-            services.TryAddSingleton<ITagHelperDescriptorFactory>(s => new TagHelperDescriptorFactory(designTime: false));
-            services.TryAddSingleton<ITagHelperDescriptorResolver, TagHelperDescriptorResolver>();
-
-            // Caches compilation artifacts across the lifetime of the application.
-            services.TryAddSingleton<ICompilerCacheProvider, DefaultCompilerCacheProvider>();
+                var viewEngine = new RazorViewEngine(pageFactory, pageActivator, htmlEncoder, optionsAccessor, razorFileSystem, loggerFactory, diagnosticSource);
+                return viewEngine;
+            });
+            services.TryAddSingleton<IViewCompilerProvider, RazorViewCompilerProvider>();
+            services.TryAddSingleton<IViewCompilationMemoryCacheProvider, RazorViewCompilationMemoryCacheProvider>();
 
             // In the default scenario the following services are singleton by virtue of being initialized as part of
             // creating the singleton RazorViewEngine instance.
             services.TryAddTransient<IRazorPageFactoryProvider, DefaultRazorPageFactoryProvider>();
-            services.TryAddTransient<IRazorCompilationService, RazorCompilationService>();
-            services.TryAddTransient<IMvcRazorHost,MvcRazorHost>();
+
+            //
+            // Razor compilation infrastructure
+            //
+            services.TryAddSingleton<LazyMetadataReferenceFeature>();
+            services.TryAddSingleton<RazorProjectFileSystem, FileProviderRazorProjectFileSystem>();
+            services.TryAddSingleton(s =>
+            {
+                var fileSystem = s.GetRequiredService<RazorProjectFileSystem>();
+                var projectEngine = RazorProjectEngine.Create(RazorConfiguration.Default, fileSystem, builder =>
+                {
+                    RazorExtensions.Register(builder);
+
+                    // Roslyn + TagHelpers infrastructure
+                    var metadataReferenceFeature = s.GetRequiredService<LazyMetadataReferenceFeature>();
+                    builder.Features.Add(metadataReferenceFeature);
+                    builder.Features.Add(new CompilationTagHelperFeature());
+
+                    // TagHelperDescriptorProviders (actually do tag helper discovery)
+                    builder.Features.Add(new DefaultTagHelperDescriptorProvider());
+                    builder.Features.Add(new ViewComponentTagHelperDescriptorProvider());
+                });
+
+                return projectEngine;
+            });
+
+            // Legacy Razor compilation services
+            services.TryAddSingleton<RazorProject>(s => s.GetRequiredService<RazorProjectEngine>().FileSystem);
+            services.TryAddSingleton<RazorTemplateEngine, MvcRazorTemplateEngine>();
+            services.TryAddSingleton(s => s.GetRequiredService<RazorProjectEngine>().Engine);
 
             // This caches Razor page activation details that are valid for the lifetime of the application.
             services.TryAddSingleton<IRazorPageActivator, RazorPageActivator>();
 
-            // Only want one ITagHelperActivator so it can cache Type activation information. Types won't conflict.
+            // Only want one ITagHelperActivator and ITagHelperComponentPropertyActivator so it can cache Type activation information. Types won't conflict.
             services.TryAddSingleton<ITagHelperActivator, DefaultTagHelperActivator>();
+            services.TryAddSingleton<ITagHelperComponentPropertyActivator, TagHelperComponentPropertyActivator>();
+
             services.TryAddSingleton<ITagHelperFactory, DefaultTagHelperFactory>();
 
-            // Consumed by the Cache tag helper to cache results across the lifetime of the application.
+            // TagHelperComponents manager
+            services.TryAddScoped<ITagHelperComponentManager, TagHelperComponentManager>();
+
+            // Infrastructure for MVC TagHelpers
             services.TryAddSingleton<IMemoryCache, MemoryCache>();
+            services.TryAddSingleton<TagHelperMemoryCacheProvider>();
+            services.TryAddSingleton<IFileVersionProvider, DefaultFileVersionProvider>();
         }
     }
 }

@@ -8,11 +8,11 @@ using Microsoft.AspNetCore.Mvc.Routing;
 namespace Microsoft.AspNetCore.Mvc
 {
     /// <summary>
-    /// Identifies an action that only supports the HTTP HEAD method.
+    /// Identifies an action that supports the HTTP HEAD method.
     /// </summary>
     public class HttpHeadAttribute : HttpMethodAttribute
     {
-        private static readonly IEnumerable<string> _supportedMethods = new string[] { "HEAD" };
+        private static readonly IEnumerable<string> _supportedMethods = new [] { "HEAD" };
 
         /// <summary>
         /// Creates a new <see cref="HttpHeadAttribute"/>.

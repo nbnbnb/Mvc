@@ -6,8 +6,9 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Reflection;
 using System.Xml;
-using Microsoft.AspNetCore.Mvc.Internal;
+using Microsoft.AspNetCore.Mvc.ModelBinding.Validation;
 using Moq;
 using Xunit;
 
@@ -24,7 +25,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Metadata
                 Enumerable.Empty<IMetadataDetailsProvider>());
 
             var key = ModelMetadataIdentity.ForType(typeof(string));
-            var cache = new DefaultMetadataDetails(key, new ModelAttributes(new object[0]));
+            var cache = new DefaultMetadataDetails(key, new ModelAttributes(new object[0], null, null));
 
             // Act
             var metadata = new DefaultModelMetadata(provider, detailsProvider, cache);
@@ -50,6 +51,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Metadata
             Assert.False(metadata.IsRequired); // Defaults to false for reference types
             Assert.True(metadata.ShowForDisplay);
             Assert.True(metadata.ShowForEdit);
+            Assert.False(metadata.ValidateChildren); // Defaults to true for complex and enumerable types.
 
             Assert.Null(metadata.DataTypeName);
             Assert.Null(metadata.Description);
@@ -60,9 +62,10 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Metadata
             Assert.Null(metadata.EnumGroupedDisplayNamesAndValues);
             Assert.Null(metadata.EnumNamesAndValues);
             Assert.Null(metadata.NullDisplayText);
-            Assert.Null(metadata.TemplateHint);
+            Assert.Null(metadata.PropertyValidationFilter);
             Assert.Null(metadata.SimpleDisplayProperty);
             Assert.Null(metadata.Placeholder);
+            Assert.Null(metadata.TemplateHint);
 
             Assert.Equal(10000, ModelMetadata.DefaultOrder);
             Assert.Equal(ModelMetadata.DefaultOrder, metadata.Order);
@@ -82,7 +85,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Metadata
                 Enumerable.Empty<IMetadataDetailsProvider>());
 
             var key = ModelMetadataIdentity.ForType(typeof(Exception));
-            var cache = new DefaultMetadataDetails(key, new ModelAttributes(new object[0]));
+            var cache = new DefaultMetadataDetails(key, new ModelAttributes(new object[0], null, null));
 
             // Act
             var metadata = new DefaultModelMetadata(provider, detailsProvider, cache);
@@ -101,7 +104,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Metadata
             var detailsProvider = new EmptyCompositeMetadataDetailsProvider();
 
             var key = ModelMetadataIdentity.ForProperty(typeof(string), "Message", typeof(Exception));
-            var cache = new DefaultMetadataDetails(key, new ModelAttributes(new object[0], new object[0]));
+            var cache = new DefaultMetadataDetails(key, new ModelAttributes(new object[0], new object[0], null));
 
             // Act
             var metadata = new DefaultModelMetadata(provider, detailsProvider, cache);
@@ -110,6 +113,117 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Metadata
             Assert.Equal(typeof(string), metadata.ModelType);
             Assert.Equal("Message", metadata.PropertyName);
             Assert.Equal(typeof(Exception), metadata.ContainerType);
+        }
+
+        [Fact]
+        public void DisplayFormatString_DoesNotCacheInitialDelegateValue()
+        {
+            // Arrange
+            var provider = new EmptyModelMetadataProvider();
+            var detailsProvider = new EmptyCompositeMetadataDetailsProvider();
+
+            var key = ModelMetadataIdentity.ForProperty(
+                typeof(string),
+                nameof(TypeWithProperties.PublicGetPublicSetProperty),
+                typeof(TypeWithProperties));
+
+            var attributes = new ModelAttributes(Array.Empty<object>(), Array.Empty<object>(), null);
+            var displayFormat = "initial format";
+            var cache = new DefaultMetadataDetails(key, attributes)
+            {
+                DisplayMetadata = new DisplayMetadata
+                {
+                    DisplayFormatStringProvider = () => displayFormat,
+                },
+            };
+
+            var metadata = new DefaultModelMetadata(provider, detailsProvider, cache);
+
+            foreach (var newFormat in new[] { "one", "two", "three" })
+            {
+                // Arrange n
+                displayFormat = newFormat;
+
+                // Act n
+                var result = metadata.DisplayFormatString;
+
+                // Assert n
+                Assert.Equal(newFormat, result);
+            }
+        }
+
+        [Fact]
+        public void EditFormatString_DoesNotCacheInitialDelegateValue()
+        {
+            // Arrange
+            var provider = new EmptyModelMetadataProvider();
+            var detailsProvider = new EmptyCompositeMetadataDetailsProvider();
+
+            var key = ModelMetadataIdentity.ForProperty(
+                typeof(string),
+                nameof(TypeWithProperties.PublicGetPublicSetProperty),
+                typeof(TypeWithProperties));
+
+            var attributes = new ModelAttributes(Array.Empty<object>(), Array.Empty<object>(), null);
+            var editFormat = "initial format";
+            var cache = new DefaultMetadataDetails(key, attributes)
+            {
+                DisplayMetadata = new DisplayMetadata
+                {
+                    EditFormatStringProvider = () => editFormat,
+                },
+            };
+
+            var metadata = new DefaultModelMetadata(provider, detailsProvider, cache);
+
+            foreach (var newFormat in new[] { "one", "two", "three" })
+            {
+                // Arrange n
+                editFormat = newFormat;
+
+                // Act n
+                var result = metadata.EditFormatString;
+
+                // Assert n
+                Assert.Equal(newFormat, result);
+            }
+        }
+
+        [Fact]
+        public void NullDisplayText_DoesNotCacheInitialDelegateValue()
+        {
+            // Arrange
+            var provider = new EmptyModelMetadataProvider();
+            var detailsProvider = new EmptyCompositeMetadataDetailsProvider();
+
+            var key = ModelMetadataIdentity.ForProperty(
+                typeof(string),
+                nameof(TypeWithProperties.PublicGetPublicSetProperty),
+                typeof(TypeWithProperties));
+
+            var attributes = new ModelAttributes(Array.Empty<object>(), Array.Empty<object>(), null);
+            var nullDisplay = "initial display text";
+            var cache = new DefaultMetadataDetails(key, attributes)
+            {
+                DisplayMetadata = new DisplayMetadata
+                {
+                    NullDisplayTextProvider = () => nullDisplay,
+                },
+            };
+
+            var metadata = new DefaultModelMetadata(provider, detailsProvider, cache);
+
+            foreach (var newDisplay in new[] { "one", "two", "three" })
+            {
+                // Arrange n
+                nullDisplay = newDisplay;
+
+                // Act n
+                var result = metadata.NullDisplayText;
+
+                // Assert n
+                Assert.Equal(newDisplay, result);
+            }
         }
 
         [Theory]
@@ -124,7 +238,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Metadata
             var detailsProvider = new EmptyCompositeMetadataDetailsProvider();
 
             var key = ModelMetadataIdentity.ForType(modelType);
-            var cache = new DefaultMetadataDetails(key, new ModelAttributes(new object[0]));
+            var cache = new DefaultMetadataDetails(key, new ModelAttributes(new object[0], null, null));
 
             var metadata = new DefaultModelMetadata(provider, detailsProvider, cache);
 
@@ -151,7 +265,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Metadata
             var detailsProvider = new EmptyCompositeMetadataDetailsProvider();
 
             var key = ModelMetadataIdentity.ForType(modelType);
-            var cache = new DefaultMetadataDetails(key, new ModelAttributes(new object[0]));
+            var cache = new DefaultMetadataDetails(key, new ModelAttributes(new object[0], null, null));
 
             var metadata = new DefaultModelMetadata(provider, detailsProvider, cache);
 
@@ -185,10 +299,12 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Metadata
             var detailsProvider = new EmptyCompositeMetadataDetailsProvider();
 
             var key = ModelMetadataIdentity.ForType(modelType);
-            var cache = new DefaultMetadataDetails(key, new ModelAttributes(new object[0]));
-            cache.BindingMetadata = new BindingMetadata()
+            var cache = new DefaultMetadataDetails(key, new ModelAttributes(new object[0], null, null))
             {
-                IsBindingAllowed = false, // Will be ignored.
+                BindingMetadata = new BindingMetadata()
+                {
+                    IsBindingAllowed = false, // Will be ignored.
+                },
             };
 
             var metadata = new DefaultModelMetadata(provider, detailsProvider, cache);
@@ -210,10 +326,12 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Metadata
             var detailsProvider = new EmptyCompositeMetadataDetailsProvider();
 
             var key = ModelMetadataIdentity.ForType(modelType);
-            var cache = new DefaultMetadataDetails(key, new ModelAttributes(new object[0]));
-            cache.BindingMetadata = new BindingMetadata()
+            var cache = new DefaultMetadataDetails(key, new ModelAttributes(new object[0], null, null))
             {
-                IsBindingRequired = true, // Will be ignored.
+                BindingMetadata = new BindingMetadata()
+                {
+                    IsBindingRequired = true, // Will be ignored.
+                },
             };
 
             var metadata = new DefaultModelMetadata(provider, detailsProvider, cache);
@@ -236,7 +354,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Metadata
             var detailsProvider = new EmptyCompositeMetadataDetailsProvider();
 
             var key = ModelMetadataIdentity.ForType(modelType);
-            var cache = new DefaultMetadataDetails(key, new ModelAttributes(new object[0]));
+            var cache = new DefaultMetadataDetails(key, new ModelAttributes(new object[0], null, null));
 
             var metadata = new DefaultModelMetadata(provider, detailsProvider, cache);
 
@@ -257,7 +375,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Metadata
             var detailsProvider = new EmptyCompositeMetadataDetailsProvider();
 
             var key = ModelMetadataIdentity.ForType(modelType);
-            var cache = new DefaultMetadataDetails(key, new ModelAttributes(new object[0]));
+            var cache = new DefaultMetadataDetails(key, new ModelAttributes(new object[0], null, null));
 
             var metadata = new DefaultModelMetadata(provider, detailsProvider, cache);
 
@@ -282,13 +400,13 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Metadata
                     detailsProvider,
                     new DefaultMetadataDetails(
                         ModelMetadataIdentity.ForProperty(typeof(int), "Prop1", typeof(string)),
-                        attributes: new ModelAttributes(new object[0], new object[0]))),
+                        attributes: new ModelAttributes(new object[0], new object[0], null))),
                 new DefaultModelMetadata(
                     provider.Object,
                     detailsProvider,
                     new DefaultMetadataDetails(
                         ModelMetadataIdentity.ForProperty(typeof(int), "Prop2", typeof(string)),
-                        attributes: new ModelAttributes(new object[0], new object[0]))),
+                        attributes: new ModelAttributes(new object[0], new object[0], null))),
             };
 
             provider
@@ -296,7 +414,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Metadata
                 .Returns(expectedProperties);
 
             var key = ModelMetadataIdentity.ForType(typeof(string));
-            var cache = new DefaultMetadataDetails(key, new ModelAttributes(new object[0]));
+            var cache = new DefaultMetadataDetails(key, new ModelAttributes(new object[0], null, null));
 
             var metadata = new DefaultModelMetadata(provider.Object, detailsProvider, cache);
 
@@ -358,7 +476,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Metadata
                     detailsProvider,
                     new DefaultMetadataDetails(
                         ModelMetadataIdentity.ForProperty(typeof(int), originalName, typeof(string)),
-                        attributes: new ModelAttributes(new object[0], new object[0]))));
+                        attributes: new ModelAttributes(new object[0], new object[0], null))));
             }
 
             provider
@@ -366,7 +484,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Metadata
                 .Returns(expectedProperties);
 
             var key = ModelMetadataIdentity.ForType(typeof(string));
-            var cache = new DefaultMetadataDetails(key, new ModelAttributes(new object[0]));
+            var cache = new DefaultMetadataDetails(key, new ModelAttributes(new object[0], null, null));
 
             var metadata = new DefaultModelMetadata(provider.Object, detailsProvider, cache);
 
@@ -458,9 +576,11 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Metadata
             {
                 var propertyCache = new DefaultMetadataDetails(
                         ModelMetadataIdentity.ForProperty(typeof(int), kvp.Key, typeof(string)),
-                        attributes: new ModelAttributes(new object[0], new object[0]));
+                        attributes: new ModelAttributes(new object[0], new object[0], null))
+                {
+                    DisplayMetadata = new DisplayMetadata(),
+                };
 
-                propertyCache.DisplayMetadata = new DisplayMetadata();
                 propertyCache.DisplayMetadata.Order = kvp.Value;
 
                 expectedProperties.Add(new DefaultModelMetadata(
@@ -474,7 +594,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Metadata
                 .Returns(expectedProperties);
 
             var key = ModelMetadataIdentity.ForType(typeof(string));
-            var cache = new DefaultMetadataDetails(key, new ModelAttributes(new object[0]));
+            var cache = new DefaultMetadataDetails(key, new ModelAttributes(new object[0], null, null));
 
             var metadata = new DefaultModelMetadata(provider.Object, detailsProvider, cache);
 
@@ -494,7 +614,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Metadata
             var detailsProvider = new EmptyCompositeMetadataDetailsProvider();
 
             var key = ModelMetadataIdentity.ForType(typeof(string));
-            var cache = new DefaultMetadataDetails(key, new ModelAttributes(new object[0]));
+            var cache = new DefaultMetadataDetails(key, new ModelAttributes(new object[0], null, null));
 
             var metadata = new DefaultModelMetadata(provider, detailsProvider, cache);
 
@@ -515,7 +635,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Metadata
             var detailsProvider = new EmptyCompositeMetadataDetailsProvider();
 
             var key = ModelMetadataIdentity.ForType(typeof(string));
-            var cache = new DefaultMetadataDetails(key, new ModelAttributes(new object[0]));
+            var cache = new DefaultMetadataDetails(key, new ModelAttributes(new object[0], null, null));
 
             var metadata = new DefaultModelMetadata(provider, detailsProvider, cache);
 
@@ -536,10 +656,12 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Metadata
             var provider = new DefaultModelMetadataProvider(detailsProvider);
 
             var key = ModelMetadataIdentity.ForType(typeof(int[]));
-            var cache = new DefaultMetadataDetails(key, new ModelAttributes(new object[0]));
-            cache.BindingMetadata = new BindingMetadata()
+            var cache = new DefaultMetadataDetails(key, new ModelAttributes(new object[0], null, null))
             {
-                IsReadOnly = true, // Will be ignored.
+                BindingMetadata = new BindingMetadata()
+                {
+                    IsReadOnly = true, // Will be ignored.
+                },
             };
 
             var metadata = new DefaultModelMetadata(provider, detailsProvider, cache);
@@ -559,7 +681,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Metadata
             var provider = new DefaultModelMetadataProvider(detailsProvider);
 
             var key = ModelMetadataIdentity.ForType(typeof(TypeWithProperties));
-            var cache = new DefaultMetadataDetails(key, new ModelAttributes(new object[0]));
+            var cache = new DefaultMetadataDetails(key, new ModelAttributes(new object[0], null, null));
 
             var metadata = new DefaultModelMetadata(provider, detailsProvider, cache);
 
@@ -578,7 +700,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Metadata
             var provider = new DefaultModelMetadataProvider(detailsProvider);
 
             var key = ModelMetadataIdentity.ForType(typeof(TypeWithProperties));
-            var cache = new DefaultMetadataDetails(key, new ModelAttributes(new object[0]));
+            var cache = new DefaultMetadataDetails(key, new ModelAttributes(new object[0], null, null));
 
             var metadata = new DefaultModelMetadata(provider, detailsProvider, cache);
 
@@ -597,7 +719,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Metadata
             var provider = new DefaultModelMetadataProvider(detailsProvider);
 
             var key = ModelMetadataIdentity.ForType(typeof(TypeWithProperties));
-            var cache = new DefaultMetadataDetails(key, new ModelAttributes(new object[0]));
+            var cache = new DefaultMetadataDetails(key, new ModelAttributes(new object[0], null, null));
 
             var metadata = new DefaultModelMetadata(provider, detailsProvider, cache);
 
@@ -621,7 +743,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Metadata
             var provider = new DefaultModelMetadataProvider(detailsProvider);
 
             var key = ModelMetadataIdentity.ForType(modelType);
-            var cache = new DefaultMetadataDetails(key, new ModelAttributes(new object[0]));
+            var cache = new DefaultMetadataDetails(key, new ModelAttributes(new object[0], null, null));
 
             var metadata = new DefaultModelMetadata(provider, detailsProvider, cache);
 
@@ -647,8 +769,8 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Metadata
             var detailsProvider = new EmptyCompositeMetadataDetailsProvider();
             var provider = new DefaultModelMetadataProvider(detailsProvider);
 
-            var key = ModelMetadataIdentity.ForType(typeof(TypeWithProperties));
-            var cache = new DefaultMetadataDetails(key, new ModelAttributes(new object[0]));
+            var key = ModelMetadataIdentity.ForType(modelType);
+            var cache = new DefaultMetadataDetails(key, new ModelAttributes(new object[0], null, null));
 
             var metadata = new DefaultModelMetadata(provider, detailsProvider, cache);
 
@@ -659,6 +781,44 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Metadata
             Assert.True(validateChildren);
         }
 
+        public static TheoryData<IPropertyValidationFilter> ValidationFilterData
+        {
+            get
+            {
+                return new TheoryData<IPropertyValidationFilter>
+                {
+                    null,
+                    new ValidateNeverAttribute(),
+                };
+            }
+        }
+
+        [Theory]
+        [MemberData(nameof(ValidationFilterData))]
+        public void PropertyValidationFilter_ReflectsFilter_FromValidationMetadata(IPropertyValidationFilter value)
+        {
+            // Arrange
+            var detailsProvider = new EmptyCompositeMetadataDetailsProvider();
+            var provider = new DefaultModelMetadataProvider(detailsProvider);
+
+            var key = ModelMetadataIdentity.ForType(typeof(int));
+            var cache = new DefaultMetadataDetails(key, new ModelAttributes(new object[0], null, null))
+            {
+                ValidationMetadata = new ValidationMetadata
+                {
+                    PropertyValidationFilter = value,
+                },
+            };
+
+            var metadata = new DefaultModelMetadata(provider, detailsProvider, cache);
+
+            // Act
+            var validationFilter = metadata.PropertyValidationFilter;
+
+            // Assert
+            Assert.Same(value, validationFilter);
+        }
+
         [Fact]
         public void ValidateChildren_OverrideTrue()
         {
@@ -667,10 +827,12 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Metadata
             var provider = new DefaultModelMetadataProvider(detailsProvider);
 
             var key = ModelMetadataIdentity.ForType(typeof(int));
-            var cache = new DefaultMetadataDetails(key, new ModelAttributes(new object[0]));
-            cache.ValidationMetadata = new ValidationMetadata()
+            var cache = new DefaultMetadataDetails(key, new ModelAttributes(new object[0], null, null))
             {
-                ValidateChildren = true,
+                ValidationMetadata = new ValidationMetadata()
+                {
+                    ValidateChildren = true,
+                },
             };
 
             var metadata = new DefaultModelMetadata(provider, detailsProvider, cache);
@@ -690,10 +852,12 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Metadata
             var provider = new DefaultModelMetadataProvider(detailsProvider);
 
             var key = ModelMetadataIdentity.ForType(typeof(XmlDocument));
-            var cache = new DefaultMetadataDetails(key, new ModelAttributes(new object[0]));
-            cache.ValidationMetadata = new ValidationMetadata()
+            var cache = new DefaultMetadataDetails(key, new ModelAttributes(new object[0], null, null))
             {
-                ValidateChildren = false,
+                ValidationMetadata = new ValidationMetadata()
+                {
+                    ValidateChildren = false,
+                },
             };
 
             var metadata = new DefaultModelMetadata(provider, detailsProvider, cache);
@@ -703,6 +867,391 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Metadata
 
             // Assert
             Assert.False(validateChildren);
+        }
+
+        [Fact]
+        public void GetMetadataForType_CallsProvider()
+        {
+            // Arrange
+            var detailsProvider = new Mock<ICompositeMetadataDetailsProvider>();
+            var key = ModelMetadataIdentity.ForType(typeof(string));
+            var cache = new DefaultMetadataDetails(key, new ModelAttributes(new object[0], null, null));
+            var metadataProvider = new Mock<IModelMetadataProvider>();
+            metadataProvider
+                .Setup(mp => mp.GetMetadataForType(typeof(string)))
+                .Verifiable();
+            var metadata1 = new DefaultModelMetadata(metadataProvider.Object, detailsProvider.Object, cache);
+
+            // Act
+            var metadata2 = metadata1.GetMetadataForType(typeof(string));
+
+            // Assert
+            metadataProvider.VerifyAll();
+        }
+
+        [Fact]
+        public void GetMetadataForProperties_CallsProvider()
+        {
+            // Arrange
+            var detailsProvider = new Mock<ICompositeMetadataDetailsProvider>();
+            var key = ModelMetadataIdentity.ForType(typeof(string));
+            var cache = new DefaultMetadataDetails(key, new ModelAttributes(new object[0], null, null));
+            var metadataProvider = new Mock<IModelMetadataProvider>();
+            metadataProvider
+                .Setup(mp => mp.GetMetadataForProperties(typeof(Exception)))
+                .Verifiable();
+            var metadata1 = new DefaultModelMetadata(metadataProvider.Object, detailsProvider.Object, cache);
+
+            // Act
+            var metadata2 = metadata1.GetMetadataForProperties(typeof(Exception));
+
+            // Assert
+            metadataProvider.VerifyAll();
+        }
+
+        [Fact]
+        public void CalculateHasValidators_ParameterMetadata_TypeHasNoValidators()
+        {
+            // Arrange
+            var parameter = GetType()
+                .GetMethod(nameof(CalculateHasValidators_ParameterMetadata_TypeHasNoValidatorsMethod), BindingFlags.Static | BindingFlags.NonPublic)
+                .GetParameters()[0];
+            var modelIdentity = ModelMetadataIdentity.ForParameter(parameter);
+            var modelMetadata = CreateModelMetadata(modelIdentity, Mock.Of<IModelMetadataProvider>(), false);
+
+            // Act
+            var result = DefaultModelMetadata.CalculateHasValidators(new HashSet<DefaultModelMetadata>(), modelMetadata);
+
+            // Assert
+            Assert.False(result);
+        }
+
+        private static void CalculateHasValidators_ParameterMetadata_TypeHasNoValidatorsMethod(string model) { }
+
+        [Fact]
+        public void CalculateHasValidators_PropertyMetadata_TypeHasNoValidators()
+        {
+            // Arrange
+            var property = GetType()
+                .GetProperty(nameof(CalculateHasValidators_PropertyMetadata_TypeHasNoValidatorsProperty), BindingFlags.Static | BindingFlags.NonPublic);
+            var modelIdentity = ModelMetadataIdentity.ForProperty(property.PropertyType, property.Name, GetType());
+            var modelMetadata = CreateModelMetadata(modelIdentity, Mock.Of<IModelMetadataProvider>(), false);
+
+            // Act
+            var result = DefaultModelMetadata.CalculateHasValidators(new HashSet<DefaultModelMetadata>(), modelMetadata);
+
+            // Assert
+            Assert.False(result);
+        }
+
+        private static int CalculateHasValidators_PropertyMetadata_TypeHasNoValidatorsProperty { get; set; }
+
+        [Fact]
+        public void CalculateHasValidators_TypeWithoutProperties_TypeHasNoValidators()
+        {
+            // Arrange
+            var modelIdentity = ModelMetadataIdentity.ForType(typeof(string));
+            var modelMetadata = CreateModelMetadata(modelIdentity, Mock.Of<IModelMetadataProvider>(), false);
+
+            // Act
+            var result = DefaultModelMetadata.CalculateHasValidators(new HashSet<DefaultModelMetadata>(), modelMetadata);
+
+            // Assert
+            Assert.False(result);
+        }
+
+        [Fact]
+        public void CalculateHasValidators_SimpleType_TypeHasValidators()
+        {
+            // Arrange
+            var modelIdentity = ModelMetadataIdentity.ForType(typeof(string));
+            var modelMetadata = CreateModelMetadata(modelIdentity, Mock.Of<IModelMetadataProvider>(), true);
+
+            // Act
+            var result = DefaultModelMetadata.CalculateHasValidators(new HashSet<DefaultModelMetadata>(), modelMetadata);
+
+            // Assert
+            Assert.True(result);
+        }
+
+        [Fact]
+        public void CalculateHasValidators_ReturnsTrue_SimpleType_TypeHasNonDeterministicValidators()
+        {
+            // Arrange
+            var modelIdentity = ModelMetadataIdentity.ForType(typeof(string));
+            var modelMetadata = CreateModelMetadata(modelIdentity, Mock.Of<IModelMetadataProvider>(), null);
+
+            // Act
+            var result = DefaultModelMetadata.CalculateHasValidators(new HashSet<DefaultModelMetadata>(), modelMetadata);
+
+            // Assert
+            Assert.True(result);
+        }
+
+        [Fact]
+        public void CalculateHasValidators_TypeWithProperties_PropertyIsNotDefaultModelMetadata()
+        {
+            // Arrange
+            var modelType = typeof(TypeWithProperties);
+            var modelIdentity = ModelMetadataIdentity.ForType(modelType);
+            var metadataProvider = new Mock<IModelMetadataProvider>();
+            var modelMetadata = CreateModelMetadata(modelIdentity, metadataProvider.Object, false);
+
+            var propertyIdentity = ModelMetadataIdentity.ForProperty(typeof(int), nameof(TypeWithProperties.PublicGetPublicSetProperty), typeof(string));
+            var propertyMetadata = new Mock<ModelMetadata>(propertyIdentity);
+
+            metadataProvider
+                .Setup(mp => mp.GetMetadataForProperties(modelType))
+                .Returns(new[] { propertyMetadata.Object, })
+                .Verifiable();
+
+            // Act
+            var result = DefaultModelMetadata.CalculateHasValidators(new HashSet<DefaultModelMetadata>(), modelMetadata);
+
+            // Assert
+            Assert.True(result);
+        }
+
+        [Fact]
+        public void CalculateHasValidators_TypeWithProperties_HasValidatorForAnyPropertyIsTrue()
+        {
+            // Arrange
+            var modelType = typeof(TypeWithProperties);
+            var modelIdentity = ModelMetadataIdentity.ForType(modelType);
+            var metadataProvider = new Mock<IModelMetadataProvider>();
+            var modelMetadata = CreateModelMetadata(modelIdentity, metadataProvider.Object, false);
+
+            var property1Identity = ModelMetadataIdentity.ForProperty(typeof(int), nameof(TypeWithProperties.PublicGetPublicSetProperty), typeof(string));
+            var property1Metadata = CreateModelMetadata(property1Identity, metadataProvider.Object, false);
+
+            var property2Identity = ModelMetadataIdentity.ForProperty(typeof(int), nameof(TypeWithProperties.PublicGetProtectedSetProperty), typeof(string));
+            var property2Metadata = CreateModelMetadata(property2Identity, metadataProvider.Object, true);
+
+            metadataProvider
+                .Setup(mp => mp.GetMetadataForProperties(modelType))
+                .Returns(new[] { property1Metadata, property2Metadata })
+                .Verifiable();
+
+            // Act
+            var result = DefaultModelMetadata.CalculateHasValidators(new HashSet<DefaultModelMetadata>(), modelMetadata);
+
+            // Assert
+            Assert.True(result);
+        }
+
+        [Fact]
+        public void CalculateHasValidators_TypeWithProperties_HasValidatorsForPropertyIsNotDeterminstic()
+        {
+            // Arrange
+            var modelType = typeof(TypeWithProperties);
+            var modelIdentity = ModelMetadataIdentity.ForType(modelType);
+            var metadataProvider = new Mock<IModelMetadataProvider>();
+            var modelMetadata = CreateModelMetadata(modelIdentity, metadataProvider.Object, false);
+
+            var propertyIdentity = ModelMetadataIdentity.ForProperty(typeof(int), nameof(TypeWithProperties.PublicGetPublicSetProperty), typeof(string));
+            var propertyMetadata = CreateModelMetadata(propertyIdentity, metadataProvider.Object, null);
+
+            metadataProvider
+                .Setup(mp => mp.GetMetadataForProperties(modelType))
+                .Returns(new[] { propertyMetadata, })
+                .Verifiable();
+
+            // Act
+            var result = DefaultModelMetadata.CalculateHasValidators(new HashSet<DefaultModelMetadata>(), modelMetadata);
+
+            // Assert
+            Assert.True(result);
+        }
+
+        [Fact]
+        public void CalculateHasValidators_TypeWithProperties_HasValidatorForAllPropertiesIsFalse()
+        {
+            // Arrange
+            var modelType = typeof(TypeWithProperties);
+            var modelIdentity = ModelMetadataIdentity.ForType(modelType);
+            var metadataProvider = new Mock<IModelMetadataProvider>();
+            var modelMetadata = CreateModelMetadata(modelIdentity, metadataProvider.Object, false);
+
+            var property1Identity = ModelMetadataIdentity.ForProperty(typeof(int), nameof(TypeWithProperties.PublicGetPublicSetProperty), modelType);
+            var property1Metadata = CreateModelMetadata(property1Identity, metadataProvider.Object, false);
+
+            var property2Identity = ModelMetadataIdentity.ForProperty(typeof(int), nameof(TypeWithProperties.PublicGetProtectedSetProperty), modelType);
+            var property2Metadata = CreateModelMetadata(property2Identity, metadataProvider.Object, false);
+
+            metadataProvider
+                .Setup(mp => mp.GetMetadataForProperties(modelType))
+                .Returns(new[] { property1Metadata, property2Metadata })
+                .Verifiable();
+
+            // Act
+            var result = DefaultModelMetadata.CalculateHasValidators(new HashSet<DefaultModelMetadata>(), modelMetadata);
+
+            // Assert
+            Assert.False(result);
+        }
+
+        [Fact]
+        public void CalculateHasValidators_SelfReferencingType_HasValidatorOnNestedProperty()
+        {
+            // Arrange
+            var modelType = typeof(Employee);
+            var modelIdentity = ModelMetadataIdentity.ForType(modelType);
+            var metadataProvider = new Mock<IModelMetadataProvider>();
+            var modelMetadata = CreateModelMetadata(modelIdentity, metadataProvider.Object, false);
+
+            var employeeId = ModelMetadataIdentity.ForProperty(typeof(int), nameof(Employee.Id), modelType);
+            var employeeIdMetadata = CreateModelMetadata(modelIdentity, metadataProvider.Object, false);
+            var employeeUnit = ModelMetadataIdentity.ForProperty(typeof(BusinessUnit), nameof(Employee.Unit), modelType);
+            var employeeUnitMetadata = CreateModelMetadata(employeeUnit, metadataProvider.Object, false);
+            var employeeManager = ModelMetadataIdentity.ForProperty(typeof(Employee), nameof(Employee.Unit), modelType);
+            var employeeManagerMetadata = CreateModelMetadata(employeeManager, metadataProvider.Object, false);
+            var employeeEmployees = ModelMetadataIdentity.ForProperty(typeof(List<Employee>), nameof(Employee.Employees), modelType);
+            var employeeEmployeesMetadata = CreateModelMetadata(employeeEmployees, metadataProvider.Object, false);
+
+            var unitHead = ModelMetadataIdentity.ForProperty(typeof(Employee), nameof(BusinessUnit.Head), modelType);
+            var unitHeadMetadata = CreateModelMetadata(unitHead, metadataProvider.Object, false);
+            var unitId = ModelMetadataIdentity.ForProperty(typeof(int), nameof(BusinessUnit.Id), modelType);
+            var unitIdMetadata = CreateModelMetadata(unitId, metadataProvider.Object, true); // BusinessUnit.Id has validators.
+
+            metadataProvider
+                .Setup(mp => mp.GetMetadataForProperties(modelType))
+                .Returns(new[] { employeeIdMetadata, employeeUnitMetadata, employeeManagerMetadata, employeeEmployeesMetadata, })
+                .Verifiable();
+
+            metadataProvider
+                .Setup(mp => mp.GetMetadataForProperties(typeof(BusinessUnit)))
+                .Returns(new[] { unitHeadMetadata, unitIdMetadata, })
+                .Verifiable();
+
+            // Act
+            var result = DefaultModelMetadata.CalculateHasValidators(new HashSet<DefaultModelMetadata>(), modelMetadata);
+
+            // Assert
+            Assert.True(result);
+        }
+
+        [Fact]
+        public void CalculateHasValidators_SelfReferencingType_HasValidatorOnSelfReferencedProperty()
+        {
+            // Arrange
+            var modelType = typeof(Employee);
+            var modelIdentity = ModelMetadataIdentity.ForType(modelType);
+            var metadataProvider = new Mock<IModelMetadataProvider>();
+            var modelMetadata = CreateModelMetadata(modelIdentity, metadataProvider.Object, false);
+
+            var employeeId = ModelMetadataIdentity.ForProperty(typeof(int), nameof(Employee.Id), modelType);
+            var employeeIdMetadata = CreateModelMetadata(modelIdentity, metadataProvider.Object, false);
+            var employeeUnit = ModelMetadataIdentity.ForProperty(typeof(BusinessUnit), nameof(Employee.Unit), modelType);
+            var employeeUnitMetadata = CreateModelMetadata(employeeUnit, metadataProvider.Object, false);
+            var employeeManager = ModelMetadataIdentity.ForProperty(typeof(Employee), nameof(Employee.Unit), modelType);
+            var employeeManagerMetadata = CreateModelMetadata(employeeManager, metadataProvider.Object, false);
+            var employeeEmployees = ModelMetadataIdentity.ForProperty(typeof(List<Employee>), nameof(Employee.Employees), modelType);
+            var employeeEmployeesMetadata = CreateModelMetadata(employeeEmployees, metadataProvider.Object, false);
+
+            var unitHead = ModelMetadataIdentity.ForProperty(typeof(Employee), nameof(BusinessUnit.Head), modelType);
+            var unitHeadMetadata = CreateModelMetadata(unitHead, metadataProvider.Object, true); // BusinessUnit.Head has validators
+            var unitId = ModelMetadataIdentity.ForProperty(typeof(int), nameof(BusinessUnit.Id), modelType);
+            var unitIdMetadata = CreateModelMetadata(unitId, metadataProvider.Object, false); 
+
+            metadataProvider
+                .Setup(mp => mp.GetMetadataForProperties(modelType))
+                .Returns(new[] { employeeIdMetadata, employeeUnitMetadata, employeeManagerMetadata, employeeEmployeesMetadata, });
+
+            metadataProvider
+                .Setup(mp => mp.GetMetadataForProperties(typeof(BusinessUnit)))
+                .Returns(new[] { unitHeadMetadata, unitIdMetadata, });
+
+            metadataProvider
+                .Setup(mp => mp.GetMetadataForType(modelType))
+                .Returns(modelMetadata);
+
+            // Act
+            var result = DefaultModelMetadata.CalculateHasValidators(new HashSet<DefaultModelMetadata>(), modelMetadata);
+
+            // Assert
+            Assert.True(result);
+        }
+
+        [Fact]
+        public void CalculateHasValidators_CollectionElementHasValidators()
+        {
+            // Arrange
+            var modelType = typeof(Employee);
+            var modelIdentity = ModelMetadataIdentity.ForType(modelType);
+            var metadataProvider = new Mock<IModelMetadataProvider>();
+            var modelMetadata = CreateModelMetadata(modelIdentity, metadataProvider.Object, false);
+
+            var employeeId = ModelMetadataIdentity.ForProperty(typeof(int), nameof(Employee.Id), modelType);
+            var employeeIdMetadata = CreateModelMetadata(modelIdentity, metadataProvider.Object, false);
+            var employeeEmployees = ModelMetadataIdentity.ForProperty(typeof(List<Employee>), nameof(Employee.Employees), modelType);
+            var employeeEmployeesMetadata = CreateModelMetadata(employeeEmployees, metadataProvider.Object, false);
+
+            metadataProvider
+                .Setup(mp => mp.GetMetadataForProperties(modelType))
+                .Returns(new[] { employeeIdMetadata, employeeEmployeesMetadata, });
+
+            metadataProvider
+                .Setup(mp => mp.GetMetadataForType(modelType))
+                .Returns(CreateModelMetadata(modelIdentity, metadataProvider.Object, true)); // Employees.Employee has validators
+
+            // Act
+            var result = DefaultModelMetadata.CalculateHasValidators(new HashSet<DefaultModelMetadata>(), modelMetadata);
+
+            // Assert
+            Assert.True(result);
+        }
+
+        [Fact]
+        public void CalculateHasValidators_SelfReferencingType_NoValidatorsInGraph()
+        {
+            // Arrange
+            var modelType = typeof(Employee);
+            var modelIdentity = ModelMetadataIdentity.ForType(modelType);
+            var metadataProvider = new Mock<IModelMetadataProvider>();
+            var modelMetadata = CreateModelMetadata(modelIdentity, metadataProvider.Object, false);
+
+            var employeeId = ModelMetadataIdentity.ForProperty(typeof(int), nameof(Employee.Id), modelType);
+            var employeeIdMetadata = CreateModelMetadata(modelIdentity, metadataProvider.Object, false);
+            var employeeUnit = ModelMetadataIdentity.ForProperty(typeof(BusinessUnit), nameof(Employee.Unit), modelType);
+            var employeeUnitMetadata = CreateModelMetadata(employeeUnit, metadataProvider.Object, false);
+            var employeeManager = ModelMetadataIdentity.ForProperty(typeof(Employee), nameof(Employee.Unit), modelType);
+            var employeeManagerMetadata = CreateModelMetadata(employeeManager, metadataProvider.Object, false);
+            var employeeEmployeesId = ModelMetadataIdentity.ForProperty(typeof(List<Employee>), nameof(Employee.Employees), modelType);
+            var employeeEmployeesIdMetadata = CreateModelMetadata(employeeEmployeesId, metadataProvider.Object, false);
+
+            var unitHead = ModelMetadataIdentity.ForProperty(typeof(Employee), nameof(BusinessUnit.Head), modelType);
+            var unitHeadMetadata = CreateModelMetadata(unitHead, metadataProvider.Object, false);
+            var unitId = ModelMetadataIdentity.ForProperty(typeof(int), nameof(BusinessUnit.Id), modelType);
+            var unitIdMetadata = CreateModelMetadata(unitId, metadataProvider.Object, false);
+
+            metadataProvider
+                .Setup(mp => mp.GetMetadataForProperties(modelType))
+                .Returns(new[] { employeeIdMetadata, employeeUnitMetadata, employeeManagerMetadata, employeeEmployeesIdMetadata, });
+
+            metadataProvider
+                .Setup(mp => mp.GetMetadataForProperties(typeof(BusinessUnit)))
+                .Returns(new[] { unitHeadMetadata, unitIdMetadata, });
+
+            metadataProvider
+                .Setup(mp => mp.GetMetadataForType(modelType))
+                .Returns(modelMetadata);
+
+            // Act
+            var result = DefaultModelMetadata.CalculateHasValidators(new HashSet<DefaultModelMetadata>(), modelMetadata);
+
+            // Assert
+            Assert.False(result);
+        }
+
+        private static DefaultModelMetadata CreateModelMetadata(
+            ModelMetadataIdentity modelIdentity, 
+            IModelMetadataProvider metadataProvider,
+            bool? hasValidators)
+        {
+            return new DefaultModelMetadata(
+                metadataProvider,
+                new SetHasValidatorsCompositeMetadataDetailsProvider { HasValidators = hasValidators },
+                new DefaultMetadataDetails(modelIdentity, new ModelAttributes(new object[0], new object[0], new object[0])));
         }
 
         private void ActionMethod(string input)
@@ -716,6 +1265,42 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Metadata
             public int PublicGetProtectedSetProperty { get; protected set; }
 
             public int PublicGetPublicSetProperty { get; set; }
+        }
+
+        public class Employee
+        {
+            public int Id { get; set; }
+
+            public BusinessUnit Unit { get; set; }
+
+            public Employee Manager { get; set; }
+
+            public List<Employee> Employees { get; set; }
+        }
+
+        public class BusinessUnit
+        {
+            public Employee Head { get; set; }
+
+            public int Id { get; set; }
+        }
+
+        private class SetHasValidatorsCompositeMetadataDetailsProvider : ICompositeMetadataDetailsProvider
+        {
+            public bool? HasValidators { get; set; }
+
+            public void CreateBindingMetadata(BindingMetadataProviderContext context)
+            {
+            }
+
+            public void CreateDisplayMetadata(DisplayMetadataProviderContext context)
+            {
+            }
+
+            public void CreateValidationMetadata(ValidationMetadataProviderContext context)
+            {
+                context.ValidationMetadata.HasValidators = HasValidators;
+            }
         }
     }
 }

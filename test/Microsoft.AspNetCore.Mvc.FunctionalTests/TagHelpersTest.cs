@@ -25,8 +25,8 @@ namespace Microsoft.AspNetCore.Mvc.FunctionalTests
             MvcTestFixture<TagHelpersWebSite.Startup> fixture,
             MvcEncodedTestFixture<TagHelpersWebSite.Startup> encodedFixture)
         {
-            Client = fixture.Client;
-            EncodedClient = encodedFixture.Client;
+            Client = fixture.CreateDefaultClient();
+            EncodedClient = encodedFixture.CreateDefaultClient();
         }
 
         public HttpClient Client { get; }
@@ -38,6 +38,7 @@ namespace Microsoft.AspNetCore.Mvc.FunctionalTests
         [InlineData("About")]
         [InlineData("Help")]
         [InlineData("UnboundDynamicAttributes")]
+        [InlineData("ViewComponentTagHelpers")]
         public async Task CanRenderViewsWithTagHelpers(string action)
         {
             // Arrange
@@ -88,7 +89,7 @@ namespace Microsoft.AspNetCore.Mvc.FunctionalTests
         }
 
         [Fact]
-        public async Task ReregisteringAntiforgeryTokenInsideFormTagHelper_DoesNotAddDuplicateAntiforgeryTokenFields()
+        public async Task ReRegisteringAntiforgeryTokenInsideFormTagHelper_DoesNotAddDuplicateAntiforgeryTokenFields()
         {
             // Arrange
             var expectedMediaType = MediaTypeHeaderValue.Parse("text/html; charset=utf-8");
@@ -115,9 +116,8 @@ namespace Microsoft.AspNetCore.Mvc.FunctionalTests
             ResourceFile.UpdateFile(_resourcesAssembly, outputFile, expectedContent, responseContent);
 #else
             expectedContent = string.Format(expectedContent, forgeryToken);
-            // Mono issue - https://github.com/aspnet/External/issues/19
             Assert.Equal(
-                PlatformNormalizer.NormalizeContent(expectedContent.Trim()),
+                expectedContent.Trim(),
                 responseContent,
                 ignoreLineEndingDifferences: true);
 #endif
@@ -216,9 +216,8 @@ page:<root>root-content</root>"
 #if GENERATE_BASELINES
             ResourceFile.UpdateFile(_resourcesAssembly, outputFile, expectedContent, responseContent);
 #else
-            // Mono issue - https://github.com/aspnet/External/issues/19
             Assert.Equal(
-                PlatformNormalizer.NormalizeContent(expectedContent),
+                expectedContent,
                 responseContent,
                 ignoreLineEndingDifferences: true);
 #endif
@@ -284,9 +283,8 @@ page:<root>root-content</root>"
 #if GENERATE_BASELINES
             ResourceFile.UpdateFile(_resourcesAssembly, outputFile, expectedContent, responseContent);
 #else
-            // Mono issue - https://github.com/aspnet/External/issues/19
             Assert.Equal(
-                PlatformNormalizer.NormalizeContent(expectedContent),
+                expectedContent,
                 responseContent,
                 ignoreLineEndingDifferences: true);
 #endif

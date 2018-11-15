@@ -9,7 +9,6 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc.Rendering;
 using Microsoft.AspNetCore.Mvc.ViewEngines;
 using Microsoft.AspNetCore.Mvc.ViewFeatures;
-using Microsoft.AspNetCore.Mvc.ViewFeatures.Internal;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Microsoft.AspNetCore.Mvc.ViewComponents
@@ -79,7 +78,6 @@ namespace Microsoft.AspNetCore.Mvc.ViewComponents
 
             var viewEngine = ViewEngine ?? ResolveViewEngine(context);
             var viewContext = context.ViewContext;
-            var viewData = ViewData ?? context.ViewData;
             var isNullOrEmptyViewName = string.IsNullOrEmpty(ViewName);
 
             ViewEngineResult result = null;

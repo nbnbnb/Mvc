@@ -117,7 +117,10 @@ namespace Microsoft.AspNetCore.Mvc.Core.Rendering
         [InlineData("attribute", "value", "<p attribute=\"HtmlEncode[[value]]\"></p>")]
         [InlineData("attribute", null, "<p attribute=\"\"></p>")]
         [InlineData("attribute", "", "<p attribute=\"\"></p>")]
-        public void WriteTo_WriteEmptyAttribute_WhenValueIsNullOrEmpty(string attributeKey, string attributeValue, string expectedOutput)
+        public void WriteTo_WriteEmptyAttribute_WhenValueIsNullOrEmpty(
+            string attributeKey,
+            string attributeValue,
+            string expectedOutput)
         {
             // Arrange
             var tagBuilder = new TagBuilder("p");
@@ -149,6 +152,106 @@ namespace Microsoft.AspNetCore.Mvc.Core.Rendering
                 // Assert
                 Assert.Equal("<p><span>Hello</span>HtmlEncode[[, World!]]</p>", writer.ToString());
             }
+
+            Assert.True(tagBuilder.HasInnerHtml);
+        }
+
+        [Fact]
+        public void ReadingInnerHtml_LeavesHasInnerHtmlFalse()
+        {
+            // Arrange
+            var tagBuilder = new TagBuilder("p");
+
+            // Act
+            var innerHtml = tagBuilder.InnerHtml;
+
+            // Assert
+            Assert.False(tagBuilder.HasInnerHtml);
+            Assert.NotNull(innerHtml);
+        }
+
+        [Fact]
+        public void RenderStartTag_RendersExpectedStartTag()
+        {
+            // Arrange
+            var tagBuilder = new TagBuilder("p");
+
+            // Act
+            var tag = tagBuilder.RenderStartTag();
+
+            // Assert
+            Assert.Equal("<p>", HtmlContentUtilities.HtmlContentToString(tag));
+        }
+
+        [Fact]
+        public void RenderStartTag_RendersExpectedStartTag_TagBuilderRendersAsExpected()
+        {
+            // Arrange
+            var tagBuilder = new TagBuilder("p");
+            tagBuilder.TagRenderMode = TagRenderMode.EndTag;
+
+            // Act
+            var tag = tagBuilder.RenderStartTag();
+
+            // Assert
+            Assert.Equal("<p>", HtmlContentUtilities.HtmlContentToString(tag));
+            Assert.Equal("</p>", HtmlContentUtilities.HtmlContentToString(tagBuilder));
+        }
+
+        [Fact]
+        public void RenderEndTag_RendersExpectedEndTag()
+        {
+            // Arrange
+            var tagBuilder = new TagBuilder("p");
+
+            // Act
+            var tag = tagBuilder.RenderEndTag();
+
+            // Assert
+            Assert.Equal("</p>", HtmlContentUtilities.HtmlContentToString(tag));
+        }
+
+        [Fact]
+        public void RenderEndTag_RendersExpectedEndTag_TagBuilderRendersAsExpected()
+        {
+            // Arrange
+            var tagBuilder = new TagBuilder("p");
+            tagBuilder.TagRenderMode = TagRenderMode.Normal;
+
+            // Act
+            var tag = tagBuilder.RenderEndTag();
+
+            // Assert
+            Assert.Equal("</p>", HtmlContentUtilities.HtmlContentToString(tag));
+            Assert.Equal("<p></p>", HtmlContentUtilities.HtmlContentToString(tagBuilder));
+        }
+
+        [Fact]
+        public void RenderSelfClosingTag_RendersExpectedSelfClosingTag()
+        {
+            // Arrange
+            var tagBuilder = new TagBuilder("p");
+
+            // Act
+            var tag = tagBuilder.RenderSelfClosingTag();
+
+            // Assert
+            Assert.Equal("<p />", HtmlContentUtilities.HtmlContentToString(tag));
+
+        }
+
+        [Fact]
+        public void RenderBody_RendersExpectedBody()
+        {
+            // Arrange
+            var tagBuilder = new TagBuilder("p");
+            tagBuilder.InnerHtml.AppendHtml("<span>Hello</span>");
+
+            // Act
+            var tag = tagBuilder.RenderBody();
+
+            // Assert
+            Assert.Equal("<span>Hello</span>", HtmlContentUtilities.HtmlContentToString(tag));
         }
     }
 }

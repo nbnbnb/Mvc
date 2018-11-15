@@ -10,22 +10,20 @@ using Microsoft.Extensions.DependencyModel;
 namespace Microsoft.AspNetCore.Mvc.ApplicationParts
 {
     /// <summary>
-    /// An <see cref="ApplicationPart"/> backed by an <see cref="Assembly"/>.
+    /// An <see cref="ApplicationPart"/> backed by an <see cref="System.Reflection.Assembly"/>.
     /// </summary>
-    public class AssemblyPart : ApplicationPart, IApplicationPartTypeProvider, ICompilationReferencesProvider
+    public class AssemblyPart :
+        ApplicationPart,
+        IApplicationPartTypeProvider,
+        ICompilationReferencesProvider
     {
         /// <summary>
-        /// Initalizes a new <see cref="AssemblyPart"/> instance.
+        /// Initializes a new <see cref="AssemblyPart"/> instance.
         /// </summary>
-        /// <param name="assembly"></param>
+        /// <param name="assembly">The backing <see cref="System.Reflection.Assembly"/>.</param>
         public AssemblyPart(Assembly assembly)
         {
-            if (assembly == null)
-            {
-                throw new ArgumentNullException(nameof(assembly));
-            }
-
-            Assembly = assembly;
+            Assembly = assembly ?? throw new ArgumentNullException(nameof(assembly));
         }
 
         /// <summary>
@@ -44,6 +42,13 @@ namespace Microsoft.AspNetCore.Mvc.ApplicationParts
         /// <inheritdoc />
         public IEnumerable<string> GetReferencePaths()
         {
+            if (Assembly.IsDynamic)
+            {
+                // Skip loading process for dynamic assemblies. This prevents DependencyContextLoader from reading the
+                // .deps.json file from either manifest resources or the assembly location, which will fail.
+                return Enumerable.Empty<string>();
+            }
+
             var dependencyContext = DependencyContext.Load(Assembly);
             if (dependencyContext != null)
             {

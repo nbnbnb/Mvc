@@ -2,11 +2,12 @@
 // Licensed under the Apache License, Version 2.0. See License.txt in the project root for license information.
 
 using System;
+using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ApplicationParts;
-using Microsoft.AspNetCore.Mvc.Internal;
 using Microsoft.AspNetCore.Mvc.Razor.TagHelpers;
 using Microsoft.AspNetCore.Mvc.TagHelpers;
 
@@ -42,6 +43,7 @@ namespace Microsoft.Extensions.DependencyInjection
             builder.AddFormatterMappings();
             builder.AddViews();
             builder.AddRazorViewEngine();
+            builder.AddRazorPages();
             builder.AddCacheTagHelper();
 
             // +1 order
@@ -58,15 +60,15 @@ namespace Microsoft.Extensions.DependencyInjection
         private static void AddDefaultFrameworkParts(ApplicationPartManager partManager)
         {
             var mvcTagHelpersAssembly = typeof(InputTagHelper).GetTypeInfo().Assembly;
-            if(!partManager.ApplicationParts.OfType<AssemblyPart>().Any(p => p.Assembly == mvcTagHelpersAssembly))
+            if (!partManager.ApplicationParts.OfType<AssemblyPart>().Any(p => p.Assembly == mvcTagHelpersAssembly))
             {
-                partManager.ApplicationParts.Add(new AssemblyPart(mvcTagHelpersAssembly));
+                partManager.ApplicationParts.Add(new FrameworkAssemblyPart(mvcTagHelpersAssembly));
             }
-            
+
             var mvcRazorAssembly = typeof(UrlResolutionTagHelper).GetTypeInfo().Assembly;
-            if(!partManager.ApplicationParts.OfType<AssemblyPart>().Any(p => p.Assembly == mvcRazorAssembly))
+            if (!partManager.ApplicationParts.OfType<AssemblyPart>().Any(p => p.Assembly == mvcRazorAssembly))
             {
-                partManager.ApplicationParts.Add(new AssemblyPart(mvcRazorAssembly));
+                partManager.ApplicationParts.Add(new FrameworkAssemblyPart(mvcRazorAssembly));
             }
         }
 
@@ -92,6 +94,17 @@ namespace Microsoft.Extensions.DependencyInjection
             builder.Services.Configure(setupAction);
 
             return builder;
+        }
+
+        [DebuggerDisplay("{Name}")]
+        private class FrameworkAssemblyPart : AssemblyPart, ICompilationReferencesProvider
+        {
+            public FrameworkAssemblyPart(Assembly assembly)
+                : base(assembly)
+            {
+            }
+
+            IEnumerable<string> ICompilationReferencesProvider.GetReferencePaths() => Enumerable.Empty<string>();
         }
     }
 }
